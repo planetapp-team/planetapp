@@ -261,6 +261,13 @@ class _CalendarWidgetState extends State<CalendarWidget> {
             ..._selectedEvents.map(
               (event) => Card(
                 margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                // 배경색 흰색, 그림자 제거, 테두리 없애서 노란+검은 띠 완전 제거
+                color: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide.none,
+                ),
                 child: ListTile(
                   title: Text(event['title'] ?? '제목 없음'),
                   subtitle: Text(

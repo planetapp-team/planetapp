@@ -5,6 +5,7 @@
 // 수정 완료 시 true 반환 후 이전 화면으로 돌아감
 // 날짜 선택 다이얼로그 제공
 // 빈 필드 입력 검증 포함
+// ✅ 카테고리 입력 필드를 드롭다운 선택으로 변경
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -23,9 +24,12 @@ class EditTodoPage extends StatefulWidget {
 class _EditTodoPageState extends State<EditTodoPage> {
   late TextEditingController _titleController; // 제목 입력 컨트롤러
   late TextEditingController _subjectController; // 과목 입력 컨트롤러
-  late TextEditingController _categoryController; // 카테고리 입력 컨트롤러
+
   DateTime? _startDate; // 시작일
   DateTime? _endDate; // 마감일
+
+  final List<String> _categories = ['과제', '시험', '발표', '개인', '기타']; // ✅ 카테고리 목록
+  String? _selectedCategory; // ✅ 선택된 카테고리 상태값
 
   @override
   void initState() {
@@ -35,7 +39,8 @@ class _EditTodoPageState extends State<EditTodoPage> {
     // Firestore Timestamp를 DateTime으로 변환 후 초기값 세팅
     _titleController = TextEditingController(text: data['title'] ?? '');
     _subjectController = TextEditingController(text: data['subject'] ?? '');
-    _categoryController = TextEditingController(text: data['category'] ?? '');
+    _selectedCategory =
+        data['category'] ?? _categories.first; // ✅ 초기 선택 카테고리 설정
     _startDate = (data['startDate'] as Timestamp?)?.toDate() ?? DateTime.now();
     _endDate = (data['endDate'] as Timestamp?)?.toDate() ?? DateTime.now();
   }
@@ -71,7 +76,7 @@ class _EditTodoPageState extends State<EditTodoPage> {
 
     final title = _titleController.text.trim();
     final subject = _subjectController.text.trim();
-    final category = _categoryController.text.trim();
+    final category = _selectedCategory?.trim() ?? ''; // ✅ 드롭다운에서 선택된 카테고리 값 사용
 
     // 입력 검증: 빈 필드가 있으면 저장 중단하고 메시지 출력
     if (title.isEmpty || subject.isEmpty || category.isEmpty) {
@@ -127,9 +132,17 @@ class _EditTodoPageState extends State<EditTodoPage> {
               controller: _subjectController,
               decoration: const InputDecoration(labelText: '과목'),
             ),
-            // 카테고리 입력 필드
-            TextField(
-              controller: _categoryController,
+            // ✅ 카테고리 선택 드롭다운 필드
+            DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              items: _categories.map((category) {
+                return DropdownMenuItem(value: category, child: Text(category));
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedCategory = value; // 선택한 카테고리 업데이트
+                });
+              },
               decoration: const InputDecoration(labelText: '카테고리'),
             ),
             const SizedBox(height: 16),
