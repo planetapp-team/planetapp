@@ -1,12 +1,15 @@
-//filter_page.dart
-// 로그인괸 사용자 할일에서
-// 선택된 과목 + 선택된 카테고리에 따라
-// Firestore 쿼리 수행 후 리스트로 결과 출력
-// lib/filter_page.dart
-//filter_page.dart
+// filter_page.dart
+// 로그인한 사용자의 할 일 목록에서
+// 선택한 과목과 카테고리에 따라 Firestore 쿼리를 수행하여
+// 필터된 결과를 리스트로 출력하는 화면
+
+// 카테고리: 시험 / 과제 / 팀플 / 기타
+// 과목: 사용자가 입력한 모든 과목 목록에서 선택 가능
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'todo_test_page.dart';
 
 class FilterPage extends StatefulWidget {
   const FilterPage({super.key});
@@ -16,21 +19,21 @@ class FilterPage extends StatefulWidget {
 }
 
 class _FilterPageState extends State<FilterPage> {
-  String? selectedSubject;
-  List<String> selectedCategories = [];
+  String? selectedSubject; // 선택된 과목
+  List<String> selectedCategories = []; // 선택된 카테고리들
 
-  List<String> subjects = ['모든 과목']; // 기본 과목
+  List<String> subjects = ['모든 과목']; // 과목 목록 (기본값 '모든 과목')
+  final List<String> categories = ['시험', '과제', '팀플', '기타']; // 기본 카테고리
 
-  final List<String> categories = ['시험', '과제', '팀플', '기타'];
-
-  List<Map<String, dynamic>> filteredTodos = [];
+  List<Map<String, dynamic>> filteredTodos = []; // 필터링된 할 일 데이터 리스트
 
   @override
   void initState() {
     super.initState();
-    loadSubjectsFromFirestore();
+    loadSubjectsFromFirestore(); // Firestore에서 사용자 과목 불러오기
   }
 
+  // Firestore에서 현재 사용자의 과목을 조회하여 목록에 추가
   Future<void> loadSubjectsFromFirestore() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -38,6 +41,7 @@ class _FilterPageState extends State<FilterPage> {
     final userDocRef = FirebaseFirestore.instance.collection('todos').doc(uid);
     final querySnapshot = await userDocRef.collection('userTodos').get();
 
+    // 각 문서에서 subject 필드 추출, null 또는 빈 문자열 제외, 중복 제거
     final fetchedSubjects = querySnapshot.docs
         .map((doc) => (doc.data()['subject'] as String?))
         .where((subject) => subject != null && subject.isNotEmpty)
@@ -46,11 +50,13 @@ class _FilterPageState extends State<FilterPage> {
         .toList();
 
     setState(() {
+      // '모든 과목'을 앞에 추가하여 드롭다운 초기값 설정
       subjects = ['모든 과목', ...fetchedSubjects];
       selectedSubject = '모든 과목';
     });
   }
 
+  // 선택된 과목과 카테고리로 Firestore 쿼리 실행 후 결과 갱신
   void applyFilters() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -58,29 +64,33 @@ class _FilterPageState extends State<FilterPage> {
     final userDocRef = FirebaseFirestore.instance.collection('todos').doc(uid);
     Query query = userDocRef.collection('userTodos');
 
+    // 과목이 '모든 과목'이 아니면 조건 추가
     if (selectedSubject != null && selectedSubject != '모든 과목') {
       query = query.where('subject', isEqualTo: selectedSubject);
     }
 
+    // 카테고리가 선택되었으면 whereIn 조건 추가
     if (selectedCategories.isNotEmpty) {
       query = query.where('category', whereIn: selectedCategories);
     }
 
     final snapshot = await query.get();
 
+    // 문서 리스트를 Map으로 변환하며 id도 추가
     final docs = snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      data['id'] = doc.id; // 문서 ID 저장
+      data['id'] = doc.id;
       return data;
     }).toList();
 
     setState(() {
-      filteredTodos = docs;
+      filteredTodos = docs; // 필터 결과 갱신
     });
   }
 
+  // 특정 할 일(todo)의 카테고리 수정 또는 새 카테고리 추가 다이얼로그
   void showEditCategoryDialog(Map<String, dynamic> todo) {
-    String selected = todo['category'] ?? '기타';
+    String selected = todo['category'] ?? '기타'; // 현재 카테고리 선택
     final TextEditingController newCategoryController = TextEditingController();
 
     showDialog(
@@ -93,6 +103,7 @@ class _FilterPageState extends State<FilterPage> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // 기존 카테고리 선택 드롭다운
                   DropdownButton<String>(
                     value: selected,
                     isExpanded: true,
@@ -111,6 +122,7 @@ class _FilterPageState extends State<FilterPage> {
                         .toList(),
                   ),
                   const SizedBox(height: 12),
+                  // 새 카테고리 입력 필드
                   TextField(
                     controller: newCategoryController,
                     decoration: const InputDecoration(
@@ -119,12 +131,13 @@ class _FilterPageState extends State<FilterPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // 새 카테고리 추가 버튼
                   ElevatedButton(
                     onPressed: () {
                       final newCat = newCategoryController.text.trim();
                       if (newCat.isEmpty) return;
 
-                      // 중복 체크
+                      // 새 카테고리가 기존 목록에 없으면 추가
                       if (!categories.contains(newCat)) {
                         setStateDialog(() {
                           categories.add(newCat);
@@ -132,6 +145,7 @@ class _FilterPageState extends State<FilterPage> {
                           newCategoryController.clear();
                         });
                       } else {
+                        // 이미 있으면 선택만 변경
                         setStateDialog(() {
                           selected = newCat;
                           newCategoryController.clear();
@@ -143,10 +157,12 @@ class _FilterPageState extends State<FilterPage> {
                 ],
               ),
               actions: [
+                // 취소 버튼
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('취소'),
                 ),
+                // 저장 버튼: Firestore 업데이트 후 필터 재적용
                 TextButton(
                   onPressed: () async {
                     Navigator.pop(context);
@@ -165,7 +181,7 @@ class _FilterPageState extends State<FilterPage> {
 
                     await todoRef.update({'category': selected});
 
-                    applyFilters(); // 필터 결과 새로고침
+                    applyFilters(); // 변경 후 필터 다시 적용하여 화면 갱신
                   },
                   child: const Text('저장'),
                 ),
@@ -186,6 +202,7 @@ class _FilterPageState extends State<FilterPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 과목 선택 드롭다운 UI
             const Text('과목 선택', style: TextStyle(fontWeight: FontWeight.bold)),
             DropdownButton<String>(
               value: selectedSubject,
@@ -204,6 +221,8 @@ class _FilterPageState extends State<FilterPage> {
               },
             ),
             const SizedBox(height: 20),
+
+            // 카테고리 선택 체크박스 UI
             const Text(
               '카테고리 선택',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -225,30 +244,50 @@ class _FilterPageState extends State<FilterPage> {
                 );
               }).toList(),
             ),
+
             const SizedBox(height: 16),
+            // 필터 적용 버튼
             Center(
               child: ElevatedButton(
                 onPressed: applyFilters,
                 child: const Text('필터 적용'),
               ),
             ),
+
             const Divider(height: 32),
+
+            // 필터 결과 제목
             const Text('필터 결과', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            ...filteredTodos.map((todo) {
-              return Card(
-                child: ListTile(
-                  title: Text(todo['title'] ?? '제목 없음'),
-                  subtitle: Text(
-                    '과목: ${todo['subject'] ?? '없음'} / 카테고리: ${todo['category'] ?? '없음'}',
+
+            // 필터된 할 일 리스트 출력
+            filteredTodos.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Text(
+                        '저장된 일정이 없습니다',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: filteredTodos.map((todo) {
+                      return Card(
+                        child: ListTile(
+                          title: Text(todo['title'] ?? '제목 없음'),
+                          subtitle: Text(
+                            '과목: ${todo['subject'] ?? '없음'} / 카테고리: ${todo['category'] ?? '없음'}',
+                          ),
+                          // 카테고리 수정 버튼
+                          trailing: IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.grey),
+                            onPressed: () => showEditCategoryDialog(todo),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.grey),
-                    onPressed: () => showEditCategoryDialog(todo),
-                  ),
-                ),
-              );
-            }).toList(),
           ],
         ),
       ),
