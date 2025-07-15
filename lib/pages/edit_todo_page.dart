@@ -28,7 +28,7 @@ class _EditTodoPageState extends State<EditTodoPage> {
   DateTime? _startDate; // 시작일
   DateTime? _endDate; // 마감일
 
-  final List<String> _categories = ['과제', '시험', '발표', '개인', '기타']; // ✅ 카테고리 목록
+  final List<String> _categories = ['과제', '시험', '팀플', '기타']; // ✅ 카테고리 목록
   String? _selectedCategory; // ✅ 선택된 카테고리 상태값
 
   @override
