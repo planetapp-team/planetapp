@@ -1,13 +1,13 @@
-// 캘린더 위젯을 위한 필요한 패키지 import
+// calendar_widget.dart
+// 캘린더 위젯을 위한 필요한 패키지
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart'; // 캘린더 UI 라이브러리
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore DB 연동용
 import 'package:firebase_auth/firebase_auth.dart'; // Firebase 로그인 사용자 정보 접근용
 
-// Stateful 위젯 생성 - 날짜를 선택하고, 해당 날짜의 일정을 조회하기 위해 상태 관리가 필요함
 class CalendarWidget extends StatefulWidget {
-  final void Function(DateTime)? onDateSelected; // 날짜 선택 시 콜백 전달용
-  final DateTime? initialSelectedDate; // 초기 선택된 날짜 외부에서 지정 가능
+  final void Function(DateTime)? onDateSelected;
+  final DateTime? initialSelectedDate;
 
   const CalendarWidget({
     Key? key,
@@ -20,34 +20,30 @@ class CalendarWidget extends StatefulWidget {
 }
 
 class _CalendarWidgetState extends State<CalendarWidget> {
-  CalendarFormat _calendarFormat = CalendarFormat.month; // 월간/주간 뷰 설정
-  late DateTime _focusedDay; // 현재 보고 있는 달력 날짜
-  DateTime? _selectedDay; // 사용자가 선택한 날짜
-  Map<DateTime, List<Map<String, dynamic>>> _events =
-      {}; // 날짜별 일정 데이터를 저장하는 Map
-  List<Map<String, dynamic>> _selectedEvents = []; // 선택한 날짜의 일정 목록
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+  late DateTime _focusedDay;
+  DateTime? _selectedDay;
+  Map<DateTime, List<Map<String, dynamic>>> _events = {};
+  List<Map<String, dynamic>> _selectedEvents = [];
 
   @override
   void initState() {
     super.initState();
-    _focusedDay = widget.initialSelectedDate ?? DateTime.now(); // 초기 포커스 날짜 설정
+    _focusedDay = widget.initialSelectedDate ?? DateTime.now();
     _selectedDay = _focusedDay;
 
-    // Firestore에서 사용자 일정 가져오기
     _fetchTodos().then((_) {
       setState(() {
-        _selectedEvents = _getEventsForDay(_selectedDay!); // 현재 선택된 날짜의 일정만 표시
+        _selectedEvents = _getEventsForDay(_selectedDay!);
       });
     });
   }
 
-  // Firestore에서 로그인 사용자의 일정들을 가져오는 함수
   Future<void> _fetchTodos() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid; // 현재 로그인된 사용자 UID
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
     try {
-      // 사용자 할 일 문서(userTodos) 불러오기
       final snapshot = await FirebaseFirestore.instance
           .collection('todos')
           .doc(uid)
@@ -56,7 +52,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
 
       Map<DateTime, List<Map<String, dynamic>>> events = {};
 
-      // 각 일정 문서를 반복하며 날짜별로 정리
       for (var doc in snapshot.docs) {
         final data = doc.data();
 
@@ -71,11 +66,10 @@ class _CalendarWidgetState extends State<CalendarWidget> {
           ts.toDate().day,
         );
 
-        // 해당 날짜에 일정 추가
         if (events[date] == null) {
           events[date] = [];
         }
-        events[date]!.add({...data, 'docId': doc.id}); // 문서 ID도 저장
+        events[date]!.add({...data, 'docId': doc.id});
       }
 
       if (!mounted) return;
@@ -84,16 +78,14 @@ class _CalendarWidgetState extends State<CalendarWidget> {
         _selectedEvents = _getEventsForDay(_selectedDay!);
       });
     } catch (e) {
-      print('Error fetching todos: $e'); // 에러 출력
+      print('Error fetching todos: $e');
     }
   }
 
-  // 특정 날짜의 일정을 반환하는 함수
   List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
     return _events[DateTime(day.year, day.month, day.day)] ?? [];
   }
 
-  // 일정 카드 클릭 시 상세 다이얼로그 표시
   void _showEventDetailDialog(Map<String, dynamic> event) {
     showDialog(
       context: context,
@@ -116,15 +108,13 @@ class _CalendarWidgetState extends State<CalendarWidget> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _navigateToEditPage(event); // 수정 페이지로 이동
+                _navigateToEditPage(event);
               },
               child: const Text('수정'),
             ),
             TextButton(
               onPressed: () async {
-                Navigator.pop(context); // 상세창 닫기
-
-                // 삭제 확인 다이얼로그
+                Navigator.pop(context);
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (context) {
@@ -149,7 +139,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                 );
 
                 if (confirmed == true) {
-                  _deleteTodo(event['docId']); // 삭제 함수 호출
+                  _deleteTodo(event['docId']);
                 }
               },
               child: const Text('삭제', style: TextStyle(color: Colors.red)),
@@ -160,7 +150,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     );
   }
 
-  // 일정 삭제 함수 (Firestore에서 삭제 후 재조회)
   Future<void> _deleteTodo(String docId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -177,7 +166,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
         context,
       ).showSnackBar(const SnackBar(content: Text('일정이 삭제되었습니다.')));
 
-      await _fetchTodos(); // 삭제 후 다시 일정 불러오기
+      await _fetchTodos();
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -185,7 +174,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     }
   }
 
-  // 수정 페이지로 이동 후, 수정 시 일정 다시 불러옴
   void _navigateToEditPage(Map<String, dynamic> event) async {
     final result = await Navigator.pushNamed(
       context,
@@ -209,7 +197,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
             focusedDay: _focusedDay,
             calendarFormat: _calendarFormat,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            eventLoader: _getEventsForDay, // 일정 마커 표시
+            eventLoader: _getEventsForDay,
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
                 _selectedDay = selectedDay;
@@ -217,16 +205,16 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                 _selectedEvents = _getEventsForDay(selectedDay);
               });
               if (widget.onDateSelected != null) {
-                widget.onDateSelected!(selectedDay); // 외부 콜백 실행
+                widget.onDateSelected!(selectedDay);
               }
             },
             onFormatChanged: (format) {
               setState(() {
-                _calendarFormat = format; // 월간/주간 변경
+                _calendarFormat = format;
               });
             },
             onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay; // 페이지 이동 시 포커스 날짜 갱신
+              _focusedDay = focusedDay;
             },
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(
@@ -237,31 +225,94 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                 color: Colors.deepPurple,
                 shape: BoxShape.circle,
               ),
-              markerDecoration: BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-              ),
+              markerDecoration: BoxDecoration(shape: BoxShape.circle),
               markersMaxCount: 4,
+            ),
+            calendarBuilders: CalendarBuilders(
+              // ✅ 일정 마커 커스터마이징 (카테고리별 dot + +n 표시)
+              markerBuilder: (context, date, events) {
+                if (events.isEmpty) return const SizedBox.shrink();
+
+                // 최대 3개까지만 표시
+                final displayedEvents = events.take(3).toList();
+                final remaining = events.length - displayedEvents.length;
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 카테고리별 dot 표시
+                      ...displayedEvents.map((event) {
+                        Color color;
+
+                        // event가 dynamic일 수 있으니 Map<String, dynamic>으로 캐스팅 후 접근
+                        final Map<String, dynamic> e =
+                            event as Map<String, dynamic>;
+
+                        // category가 null일 경우 '기타'로 기본 처리
+                        final String category = e['category'] ?? '기타';
+
+                        switch (category) {
+                          case '시험':
+                            color = Colors.lightBlue;
+                            break;
+                          case '과제':
+                            color = Colors.red;
+                            break;
+                          case '팀플':
+                            color = Colors.purple;
+                            break;
+                          case '기타':
+                            color = Colors.green;
+                            break;
+                          default:
+                            color = Colors.grey;
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        );
+                      }).toList(),
+
+                      // 일정이 많을 경우 +n 표시
+                      if (remaining > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2),
+                          child: Text(
+                            '+$remaining',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 16),
-          // 선택한 날짜 표시
           Text(
             '선택한 날짜: ${_selectedDay?.toLocal().toIso8601String().substring(0, 10)}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          // 일정이 없을 경우 메시지 표시
           if (_selectedEvents.isEmpty)
             Text(
               '${_selectedDay?.toLocal().toIso8601String().substring(0, 10)} 일정이 없습니다.',
             )
           else
-            // 일정 카드 리스트
             ..._selectedEvents.map(
               (event) => Card(
                 margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                // 배경색 흰색, 그림자 제거, 테두리 없애서 노란+검은 띠 완전 제거
                 color: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -273,8 +324,8 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                   subtitle: Text(
                     '${event['category'] ?? ''} · ${event['subject'] ?? ''}',
                   ),
-                  trailing: _buildDdayTag(event), // D-Day 태그 표시
-                  onTap: () => _showEventDetailDialog(event), // 카드 클릭 시 상세 보기
+                  trailing: _buildDdayTag(event),
+                  onTap: () => _showEventDetailDialog(event),
                 ),
               ),
             ),
@@ -284,7 +335,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     );
   }
 
-  // 일정의 D-Day 상태를 계산하여 표시
   Widget? _buildDdayTag(Map<String, dynamic> event) {
     if (event['startDate'] == null) return null;
 
