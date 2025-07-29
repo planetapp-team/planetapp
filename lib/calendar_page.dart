@@ -1,8 +1,8 @@
 //calendar_page.dart
 // 캘린더 페이지: 사용자의 일정 데이터를 날짜별로 시각화 및 리스트로 보여주는 화면
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart'; // 캘린더 UI 위젯
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore 연동
+import 'package:table_calendar/table_calendar.dart'; // 캘린더 위젯
+import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore 사용
 import 'package:firebase_auth/firebase_auth.dart'; // 로그인된 사용자 정보 접근
 
 class CalendarPage extends StatefulWidget {
@@ -13,75 +13,82 @@ class CalendarPage extends StatefulWidget {
 }
 
 class _CalendarPageState extends State<CalendarPage> {
-  DateTime _focusedDay = DateTime.now(); // 캘린더에서 현재 보여지는 달
-  DateTime? _selectedDay; // 사용자가 선택한 날짜
+  DateTime _focusedDay = DateTime.now(); // 현재 보여지는 달
+  DateTime? _selectedDay; // 선택된 날짜
 
-  // Firestore에서 불러온 일정 데이터를 저장할 변수
-  // 날짜별로 리스트 형태로 일정 데이터를 보관
+  // 날짜별 일정 저장 맵 (예: 2025-07-27 → [일정1, 일정2])
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
 
-  // 현재 선택된 날짜의 일정 목록
+  // 현재 선택된 날짜의 일정 리스트
   List<Map<String, dynamic>> _selectedEvents = [];
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = _focusedDay; // 기본 선택 날짜는 오늘
-    _fetchEventsFromFirestore(); // Firestore로부터 일정 불러오기
+    _selectedDay = _focusedDay;
+    _fetchEventsFromFirestore();
   }
 
-  /// ✅ Firestore에서 사용자 일정 데이터 가져오기
+  /// ✅ Firestore에서 일정 데이터를 가져와 날짜별로 맵에 저장
   Future<void> _fetchEventsFromFirestore() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return; // 로그인된 사용자 없으면 종료
+    if (user == null) return;
 
     final snapshot = await FirebaseFirestore.instance
         .collection('todos')
         .doc(user.uid)
         .collection('userTodos')
-        .get(); // 사용자 일정 데이터 전부 가져오기
+        .get();
 
     Map<DateTime, List<Map<String, dynamic>>> eventMap = {};
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
-      final timestamp = data['date'] as Timestamp;
 
-      // 날짜 정보만 추출하여 비교하기 쉽게 변환
-      final date = DateTime(
-        timestamp.toDate().year,
-        timestamp.toDate().month,
-        timestamp.toDate().day,
-      );
+      // 🔑 구조에 맞춰 필드 이름 변경
+      final startTimestamp = data['startDate'] as Timestamp;
+      final endTimestamp = data['endDate'] as Timestamp;
 
-      // 해당 날짜에 이미 일정이 있다면 리스트에 추가, 없으면 새로 리스트 생성
-      eventMap[date] ??= [];
-      eventMap[date]!.add(data);
+      final startDate = _normalizeDate(startTimestamp.toDate());
+      final endDate = _normalizeDate(endTimestamp.toDate());
+
+      // 🔁 시작일 ~ 마감일 사이 날짜 전부에 일정 넣기
+      DateTime currentDate = startDate;
+      while (!currentDate.isAfter(endDate)) {
+        final normalizedDate = _normalizeDate(currentDate);
+        eventMap[normalizedDate] ??= [];
+        eventMap[normalizedDate]!.add(data);
+        currentDate = currentDate.add(const Duration(days: 1));
+      }
     }
 
-    // 화면 상태 갱신
     setState(() {
       _events = eventMap;
       _selectedEvents = _getEventsForDay(_selectedDay!);
     });
   }
 
-  /// ✅ 특정 날짜에 해당하는 일정 리스트 반환
-  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
-    return _events[DateTime(day.year, day.month, day.day)] ?? [];
+  /// ✅ 날짜를 00:00:00으로 정규화 (시간 무시)
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
   }
 
-  /// ✅ D-Day 계산 함수: 마감일 기준으로 D-3, D-Day, D+2 등으로 계산
+  /// ✅ 선택된 날짜에 해당하는 일정 리스트 반환
+  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
+    return _events[_normalizeDate(day)] ?? [];
+  }
+
+  /// ✅ D-Day 계산 함수
   String _calculateDDay(DateTime targetDate) {
-    final today = DateTime.now();
+    final today = _normalizeDate(DateTime.now());
     final difference = targetDate.difference(today).inDays;
 
     if (difference == 0) {
       return 'D-Day';
-    } else if (difference < 0) {
-      return 'D${difference}'; // 마감일 지남
+    } else if (difference > 0) {
+      return 'D-$difference';
     } else {
-      return 'D+$difference'; // 앞으로 남은 일수
+      return 'D+${-difference}';
     }
   }
 
@@ -94,22 +101,22 @@ class _CalendarPageState extends State<CalendarPage> {
       appBar: AppBar(title: const Text('캘린더')),
       body: Column(
         children: [
-          /// 📅 캘린더 위젯
+          /// 📅 캘린더 UI
           TableCalendar(
             firstDay: DateTime(2020, 1, 1),
             lastDay: DateTime(2100, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            eventLoader: _getEventsForDay, // 날짜에 해당하는 이벤트 점 표시
+            eventLoader: _getEventsForDay, // 날짜별 점 표시
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(color: Colors.transparent),
               selectedDecoration: BoxDecoration(color: Colors.blueAccent),
             ),
             calendarBuilders: CalendarBuilders(
               todayBuilder: (context, day, focusedDay) {
-                return Container(); // 오늘 날짜 표시 없음
+                return Container(); // 오늘 날짜 강조 제거
               },
-              // 날짜별 일정 표시 및 D-day 표시
+              // 날짜 박스 커스터마이징
               defaultBuilder: (context, day, focusedDay) {
                 final events = _getEventsForDay(day);
                 final totalCount = events.length;
@@ -135,24 +142,27 @@ class _CalendarPageState extends State<CalendarPage> {
                           color: Colors.black,
                         ),
                       ),
-                      // 일정 제목과 D-day 최대 3개까지 표시
                       ...events
                           .take(displayCount)
                           .map(
                             (event) => Row(
                               children: [
-                                Text(
-                                  event['title'] ?? '',
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.blueAccent,
+                                Flexible(
+                                  child: Text(
+                                    event['title'] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.blueAccent,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   _calculateDDay(
-                                    (event['due_date'] as Timestamp).toDate(),
+                                    (_normalizeDate(
+                                      (event['endDate'] as Timestamp).toDate(),
+                                    )),
                                   ),
                                   style: const TextStyle(
                                     fontSize: 8,
@@ -173,7 +183,6 @@ class _CalendarPageState extends State<CalendarPage> {
               },
             ),
             onDaySelected: (selectedDay, focusedDay) {
-              // 날짜 클릭 시 해당 날짜로 상태 변경 및 이벤트 리스트 갱신
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
@@ -184,7 +193,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
           const SizedBox(height: 20),
 
-          /// 📋 선택한 날짜의 일정 텍스트
+          /// 📝 선택한 날짜 일정 리스트
           if (_selectedDay != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -201,7 +210,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ),
           const SizedBox(height: 10),
 
-          /// 📋 일정 리스트 (없으면 안내 메시지)
+          /// 📋 일정 리스트 or 없을 때 메시지
           Expanded(
             child: _selectedEvents.isEmpty
                 ? Center(child: Text('$selectedDayString 는 저장된 일정이 없습니다.'))
@@ -209,7 +218,10 @@ class _CalendarPageState extends State<CalendarPage> {
                     itemCount: _selectedEvents.length,
                     itemBuilder: (context, index) {
                       final todo = _selectedEvents[index];
-                      final dueDate = (todo['due_date'] as Timestamp).toDate();
+                      final endDate = (_normalizeDate(
+                        (todo['endDate'] as Timestamp).toDate(),
+                      ));
+
                       return ListTile(
                         leading: const Icon(Icons.check_circle_outline),
                         title: Text(todo['title'] ?? ''),
@@ -217,10 +229,10 @@ class _CalendarPageState extends State<CalendarPage> {
                           '${todo['subject']} · ${todo['category']}',
                         ),
                         trailing: Text(
-                          _calculateDDay(dueDate),
+                          _calculateDDay(endDate),
                           style: TextStyle(
                             fontSize: 12,
-                            color: dueDate.isBefore(DateTime.now())
+                            color: endDate.isBefore(DateTime.now())
                                 ? Colors.red
                                 : Colors.green,
                           ),
