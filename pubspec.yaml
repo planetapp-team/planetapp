@@ -28,6 +28,14 @@ dependencies:
   # Firestore 데이터베이스
   cloud_firestore: ^5.6.11
 
+  # 로컬 알림 패키지 추가 ★ 여기
+  flutter_local_notifications: 
+        path: packages/flutter_local_notifications
+
+  # 알람 정확히  한국시간(KST) 맞추기
+  # 알림 예약 시 zonedSchedule()을 정확하게 쓰기 위해
+  timezone: ^0.9.2 # ← 이 줄 추가
+
   # iOS 스타일 아이콘 패키지
   cupertino_icons: ^1.0.8
 
