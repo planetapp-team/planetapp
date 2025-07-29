@@ -226,7 +226,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
                       onPressed: updateProfile,
-                      child: const Text('프로필 수정'),
+                      child: const Text('닉네임 수정'),
                     ),
               const SizedBox(height: 20),
               // 비밀번호 변경 화면으로 이동 버튼
