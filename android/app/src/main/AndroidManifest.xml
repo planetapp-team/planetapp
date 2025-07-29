@@ -11,6 +11,21 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+        <!-- 기본 알림 아이콘 설정 -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <!-- 알림 채널 ID 지정 -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="deadline_channel" />
+
+        <!-- flutter embedding 버전 -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -47,16 +62,9 @@
             </intent-filter>
         </receiver>
 
-        <!-- 기본 알림 아이콘 설정 (색상 설정은 삭제 또는 수정 권장) -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
         <!-- 🔧 이 줄은 @color 정의되어 있을 때만 유지 -->
         <!-- <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_color" /> -->
 
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
     </application>
 
     <queries>
@@ -66,5 +74,3 @@
         </intent>
     </queries>
 </manifest>
-
-
