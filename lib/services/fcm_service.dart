@@ -5,8 +5,43 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// flutter_local_notifications 패키지 import
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 class FcmService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+
+  // Flutter Local Notifications 플러그인 인스턴스 생성
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  /// 🔔 Flutter Local Notifications 초기화 및 iOS 권한 요청 포함
+  Future<void> initLocalNotifications() async {
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    // iOS 15 이상 대응 DarwinInitializationSettings 사용
+    const DarwinInitializationSettings iosSettings =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    // 초기화 및 알림 선택 시 콜백 설정
+    await flutterLocalNotificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // 알림 선택 시 동작: 필요에 따라 화면 이동 등 구현 가능
+        // 예시: Navigator.pushNamed(context, '/todo_test');
+      },
+    );
+  }
 
   /// 🔔 사용자에게 푸시 알림 권한 요청
   Future<void> requestPermission() async {
