@@ -3,17 +3,26 @@
 // - 자연어로 일정 텍스트 입력
 // - "자동 분류하기" 버튼으로 입력 내용 자동 분류
 // - 자동 분류 결과(날짜, 과목, 카테고리) 표시 및 수정 가능한 드롭다운 제공
-// - 시작일, 마감일 날짜 선택 다이얼로그
+// - 시작일, 마감일 날짜 및 시간 선택 다이얼로그
 // - "저장하기" 버튼으로 Firestore에 일정 저장
 // - 저장 후 화면 초기화 및 부모 위젯에 날짜 변경 알림
-
+// - 저장 시 마감일 기준 5분 전에 로컬 알림 예약 기능 추가 (flutter_local_notifications 활용)
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // 날짜 포맷팅
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore Timestamp
 import 'package:firebase_auth/firebase_auth.dart'; // Firebase 인증
+
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 로컬 알림
+import 'package:timezone/timezone.dart' as tz; // 타임존
+import 'package:timezone/data/latest_all.dart' as tzdata;
+
 import 'calendar_widget.dart'; // 캘린더 위젯 임포트
 
 import 'services/category_classifier.dart'; // 카테고리 분류기 임포트
+
+// flutter_local_notifications 플러그인 인스턴스 생성 (전역으로 사용)
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
 
 class NaturalInputPage extends StatefulWidget {
   final DateTime? selectedDate; // 부모로부터 전달받는 초기 선택 날짜
@@ -32,8 +41,8 @@ class NaturalInputPage extends StatefulWidget {
 class _NaturalInputPageState extends State<NaturalInputPage> {
   final TextEditingController _inputController = TextEditingController();
 
-  DateTime? _startDate; // 시작일
-  DateTime? _endDate; // 마감일
+  DateTime? _startDate; // 시작일 (날짜만 사용)
+  DateTime? _endDate; // 마감일 (날짜 + 시간 모두 포함)
 
   String? detectedDate; // 인식된 날짜 문자열 (표시용)
   String? detectedSubject; // 인식된 과목
@@ -44,11 +53,17 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
 
   // 과목 및 카테고리 선택지
   final List<String> categoryOptions = ['시험', '과제', '팀플', '기타'];
-  final List<String> subjectOptions = ['데이터통신', '캡스톤디자인', '운영체제', '기타', '일정'];
+  final List<String> subjectOptions = ['데이터통신', '모바일프로그래밍', '운영체제', '기타'];
 
   @override
   void initState() {
     super.initState();
+    // 타임존 데이터 초기화 (알림 예약 시 필수)
+    tzdata.initializeTimeZones();
+
+    // flutter_local_notifications 초기화
+    _initLocalNotifications();
+
     // 초기 선택 날짜가 있으면 시작일로 세팅 및 표시
     if (widget.selectedDate != null) {
       _startDate = widget.selectedDate;
@@ -61,6 +76,30 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
   void dispose() {
     _inputController.dispose();
     super.dispose();
+  }
+
+  /// flutter_local_notifications 초기화 함수
+  void _initLocalNotifications() {
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    const iosSettings = DarwinInitializationSettings();
+
+    const initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    flutterLocalNotificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) async {
+        final payload = response.payload;
+        if (payload != null) {
+          // 알림 클릭 시 특정 화면으로 이동 (필요 시 구현)
+          // Navigator.pushNamed(context, '/todo_test');
+        }
+      },
+    );
   }
 
   // 날짜를 "yyyy-MM-dd (요일)" 형태의 한글 문자열로 포맷팅
@@ -134,7 +173,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     });
   }
 
-  // "저장하기" 버튼 누르면 Firestore에 일정 저장
+  // 저장하기 버튼 누르면 Firestore에 일정 저장 + 5분 전 알림 예약
   Future<void> saveTodo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -155,13 +194,23 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
 
     try {
+      // 마감일이 null이면 시작일 기준 오후 11시 59분으로 설정 (마감일이 없으면 시작일을 마감일로 간주)
+      final deadlineDate =
+          _endDate ??
+          DateTime(
+            _startDate!.year,
+            _startDate!.month,
+            _startDate!.day,
+            23,
+            59,
+            0,
+          );
+
       // Firestore에 저장할 데이터 객체 생성
       final todoData = {
         'title': _inputController.text,
         'startDate': Timestamp.fromDate(_startDate!), // 시작일 저장
-        'endDate': _endDate != null
-            ? Timestamp.fromDate(_endDate!)
-            : null, // 마감일 저장(없으면 null)
+        'endDate': Timestamp.fromDate(deadlineDate), // 마감일 저장 (날짜+시간 포함)
         'subject': detectedSubject,
         'category': detectedCategory,
         'createdAt': Timestamp.now(),
@@ -173,11 +222,15 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
           .doc(user.uid)
           .collection('userTodos');
 
-      await todoRef.add(todoData); // 새 문서 추가
+      // 새 문서 추가 및 문서 ID 획득
+      final newDocRef = await todoRef.add(todoData);
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('일정이 저장되었습니다!')));
+
+      // 5분 전 알림 예약 호출
+      _scheduleNotification(newDocRef.id, _inputController.text, deadlineDate);
 
       widget.onDateSelected(_startDate!); // 부모 위젯에 날짜 변경 알림
 
@@ -199,6 +252,46 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
   }
 
+  /// 5분 전 로컬 알림 예약 함수
+  /// [id]는 알림 고유 ID (여기서는 Firestore 문서 ID를 해시코드로 변환),
+  /// [title]은 알림 제목 (일정 제목),
+  /// [deadline]은 마감일(끝나는 날짜 + 시간)
+  void _scheduleNotification(String id, String title, DateTime deadline) async {
+    final notificationId = id.hashCode;
+
+    // 알림 시간: 마감일 기준 5분 전
+    final scheduledTime = deadline.subtract(const Duration(minutes: 5));
+
+    // 현재 시간보다 과거면 예약하지 않음
+    if (scheduledTime.isBefore(DateTime.now())) {
+      debugPrint('알림 예약 실패: 이미 지난 시간입니다.');
+      return;
+    }
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      notificationId,
+      '일정 마감 5분 전 알림',
+      '$title 일정이 곧 마감됩니다.',
+      tz.TZDateTime.from(scheduledTime, tz.local),
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          'deadline_channel',
+          'Deadline Notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker',
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidAllowWhileIdle: true,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: 'deadline_payload',
+    );
+
+    debugPrint('알림 예약 완료: $title, 예약시간: $scheduledTime');
+  }
+
   // 시작일 선택 다이얼로그 표시
   Future<void> _selectStartDate() async {
     final now = DateTime.now();
@@ -216,7 +309,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
   }
 
-  // 마감일 선택 다이얼로그 표시
+  // 마감일 선택 다이얼로그 (날짜 + 시간 선택)
   Future<void> _selectEndDate() async {
     if (_startDate == null) {
       ScaffoldMessenger.of(
@@ -225,16 +318,48 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       return;
     }
 
-    final picked = await showDatePicker(
+    // 1. 날짜 선택
+    final pickedDate = await showDatePicker(
       context: context,
       initialDate: _endDate ?? _startDate!,
       firstDate: _startDate!,
       lastDate: DateTime(_startDate!.year + 5),
     );
-    if (picked != null) {
-      setState(() {
-        _endDate = picked;
-      });
+
+    if (pickedDate != null) {
+      // 2. 시간 선택 (기본값: 오후 11시 59분)
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: _endDate != null
+            ? TimeOfDay(hour: _endDate!.hour, minute: _endDate!.minute)
+            : const TimeOfDay(hour: 23, minute: 59),
+      );
+
+      if (pickedTime != null) {
+        // 날짜 + 시간 합쳐서 _endDate에 저장
+        final combinedDateTime = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        );
+        setState(() {
+          _endDate = combinedDateTime;
+        });
+      } else {
+        // 시간 선택 취소 시, 날짜만 저장하고 시간은 기본 23:59로 설정
+        final defaultTimeDate = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          23,
+          59,
+        );
+        setState(() {
+          _endDate = defaultTimeDate;
+        });
+      }
     }
   }
 
@@ -305,30 +430,22 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
                   ),
                   const SizedBox(height: 8),
 
-                  // 과목 드롭다운
+                  // 과목 텍스트 표시 (테두리 없이)
                   Row(
                     children: [
                       const Text('과목: '),
-                      DropdownButton<String>(
-                        value: subjectOptions.contains(detectedSubject)
-                            ? detectedSubject
-                            : subjectOptions.first,
-                        items: subjectOptions
-                            .map(
-                              (e) => DropdownMenuItem(value: e, child: Text(e)),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            detectedSubject = value;
-                          });
-                        },
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          detectedSubject ?? '',
+                          style: const TextStyle(fontSize: 16),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
 
-                  // 카테고리 드롭다운
+                  // 카테고리 드롭다운 (기존 유지)
                   Row(
                     children: [
                       const Text('카테고리: '),
@@ -351,15 +468,17 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
                   ),
                   const SizedBox(height: 12),
 
-                  // 마감일 날짜 선택 및 D-Day 표시
+                  // 마감일 날짜 및 시간 선택 및 D-Day 표시
                   Row(
                     children: [
                       const Text('마감일: '),
                       TextButton(
-                        onPressed: _endDate == null ? _selectEndDate : null,
+                        onPressed: _selectEndDate,
                         child: Text(
                           _endDate != null
-                              ? DateFormat('yyyy-MM-dd').format(_endDate!) +
+                              ? DateFormat(
+                                      'yyyy-MM-dd HH:mm',
+                                    ).format(_endDate!) +
                                     " (" +
                                     getDDayText(_endDate!) +
                                     ")"
@@ -380,7 +499,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
                             isEditing = true; // 편집 모드 전환
                           });
                         },
-                        child: const Text('수정'),
+                        child: const Text('수정하기'),
                       ),
                       ElevatedButton(
                         onPressed: saveTodo, // Firestore 저장 함수 호출
