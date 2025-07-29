@@ -23,7 +23,9 @@ class _CalendarWidgetState extends State<CalendarWidget> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   late DateTime _focusedDay;
   DateTime? _selectedDay;
+  // 날짜별 이벤트 리스트를 저장하는 Map
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
+  // 선택된 날짜의 이벤트 리스트
   List<Map<String, dynamic>> _selectedEvents = [];
 
   @override
@@ -32,6 +34,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     _focusedDay = widget.initialSelectedDate ?? DateTime.now();
     _selectedDay = _focusedDay;
 
+    // Firestore에서 일정 데이터를 불러와서 _events에 세팅
     _fetchTodos().then((_) {
       setState(() {
         _selectedEvents = _getEventsForDay(_selectedDay!);
@@ -39,6 +42,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     });
   }
 
+  /// Firestore에서 일정 가져와서 날짜별로 이벤트 분배
   Future<void> _fetchTodos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -55,24 +59,45 @@ class _CalendarWidgetState extends State<CalendarWidget> {
       for (var doc in snapshot.docs) {
         final data = doc.data();
 
-        if (data['startDate'] == null) continue;
-        final dynamic tsDynamic = data['startDate'];
-        if (tsDynamic is! Timestamp) continue;
+        // 시작일과 마감일 필수 확인
+        if (data['startDate'] == null || data['endDate'] == null) continue;
 
-        final Timestamp ts = tsDynamic;
-        final DateTime date = DateTime(
-          ts.toDate().year,
-          ts.toDate().month,
-          ts.toDate().day,
+        final dynamic startTsDynamic = data['startDate'];
+        final dynamic endTsDynamic = data['endDate'];
+
+        // Firestore Timestamp 타입인지 확인
+        if (startTsDynamic is! Timestamp || endTsDynamic is! Timestamp)
+          continue;
+
+        final Timestamp startTs = startTsDynamic;
+        final Timestamp endTs = endTsDynamic;
+
+        // 시작일, 마감일 모두 날짜 단위로 변환 (시간 무시)
+        final DateTime startDate = DateTime(
+          startTs.toDate().year,
+          startTs.toDate().month,
+          startTs.toDate().day,
         );
 
-        if (events[date] == null) {
-          events[date] = [];
+        final DateTime endDate = DateTime(
+          endTs.toDate().year,
+          endTs.toDate().month,
+          endTs.toDate().day,
+        );
+
+        // 시작일부터 마감일까지 날짜를 모두 돌면서 이벤트 등록
+        for (
+          DateTime date = startDate;
+          !date.isAfter(endDate);
+          date = date.add(const Duration(days: 1))
+        ) {
+          events[date] ??= [];
+          events[date]!.add({...data, 'docId': doc.id});
         }
-        events[date]!.add({...data, 'docId': doc.id});
       }
 
       if (!mounted) return;
+
       setState(() {
         _events = events;
         _selectedEvents = _getEventsForDay(_selectedDay!);
@@ -82,10 +107,12 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     }
   }
 
+  /// 특정 날짜에 해당하는 이벤트 리스트 반환 (없으면 빈 리스트)
   List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
     return _events[DateTime(day.year, day.month, day.day)] ?? [];
   }
 
+  /// 이벤트 상세보기 다이얼로그 표시
   void _showEventDetailDialog(Map<String, dynamic> event) {
     showDialog(
       context: context,
@@ -150,6 +177,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     );
   }
 
+  /// 일정 삭제 함수 (Firestore에서 문서 삭제 후 목록 다시 로드)
   Future<void> _deleteTodo(String docId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -174,6 +202,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     }
   }
 
+  /// 수정 페이지로 이동 후, 수정 완료시 일정 재로딩
   void _navigateToEditPage(Map<String, dynamic> event) async {
     final result = await Navigator.pushNamed(
       context,
@@ -229,7 +258,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
               markersMaxCount: 4,
             ),
             calendarBuilders: CalendarBuilders(
-              // ✅ 일정 마커 커스터마이징 (카테고리별 dot + +n 표시)
+              // 일정 마커 커스터마이징 (카테고리별 dot + +n 표시)
               markerBuilder: (context, date, events) {
                 if (events.isEmpty) return const SizedBox.shrink();
 
@@ -335,6 +364,7 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     );
   }
 
+  /// D-Day 태그 위젯 생성
   Widget? _buildDdayTag(Map<String, dynamic> event) {
     if (event['startDate'] == null) return null;
 
