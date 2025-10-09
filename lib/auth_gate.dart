@@ -1,8 +1,8 @@
 // lib/auth_gate.dart
 // 기능: Firebase Auth 로그인 상태 감지 후 자동 분기 처리
-// ✅ 로그인 상태이면 -> HomePage로 이동
-// ✅ 로그인 상태 아니면 -> AuthTestPage(로그인/회원가입 페이지)로 이동
-// ✅ 로그인/회원가입 성공 시 자동으로 홈으로 이동 (FirebaseAuth 상태 스트림 활용)
+// 로그인 상태이면 -> HomePage로 이동
+// 로그인 상태 아니면 -> AuthTestPage(로그인/회원가입 페이지)로 이동
+// 로그인/회원가입 성공 시 자동으로 홈으로 이동 (FirebaseAuth 상태 스트림 활용)
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
