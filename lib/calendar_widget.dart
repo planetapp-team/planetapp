@@ -1,18 +1,19 @@
-// calendar_widget.dart
-// 캘린더 위젯을 위한 필요한 패키지
+// lib/calendar_widget.dart
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart'; // 캘린더 UI 라이브러리
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore DB 연동용
-import 'package:firebase_auth/firebase_auth.dart'; // Firebase 로그인 사용자 정보 접근용
+import 'package:table_calendar/table_calendar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class CalendarWidget extends StatefulWidget {
   final void Function(DateTime)? onDateSelected;
   final DateTime? initialSelectedDate;
+  final bool isHome; // 홈 화면 여부 추가
 
   const CalendarWidget({
     Key? key,
     this.onDateSelected,
     this.initialSelectedDate,
+    this.isHome = false, // 기본값 false
   }) : super(key: key);
 
   @override
@@ -23,10 +24,11 @@ class _CalendarWidgetState extends State<CalendarWidget> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   late DateTime _focusedDay;
   DateTime? _selectedDay;
-  // 날짜별 이벤트 리스트를 저장하는 Map
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
-  // 선택된 날짜의 이벤트 리스트
   List<Map<String, dynamic>> _selectedEvents = [];
+
+  static const Color gray2 = Color(0xFFD9D9D9);
+  static const Color black = Color(0xFF000000);
 
   @override
   void initState() {
@@ -34,7 +36,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     _focusedDay = widget.initialSelectedDate ?? DateTime.now();
     _selectedDay = _focusedDay;
 
-    // Firestore에서 일정 데이터를 불러와서 _events에 세팅
     _fetchTodos().then((_) {
       setState(() {
         _selectedEvents = _getEventsForDay(_selectedDay!);
@@ -42,7 +43,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     });
   }
 
-  /// Firestore에서 일정 가져와서 날짜별로 이벤트 분배
   Future<void> _fetchTodos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -58,34 +58,24 @@ class _CalendarWidgetState extends State<CalendarWidget> {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-
-        // 시작일과 마감일 필수 확인
         if (data['startDate'] == null || data['endDate'] == null) continue;
 
         final dynamic startTsDynamic = data['startDate'];
         final dynamic endTsDynamic = data['endDate'];
-
-        // Firestore Timestamp 타입인지 확인
         if (startTsDynamic is! Timestamp || endTsDynamic is! Timestamp)
           continue;
 
-        final Timestamp startTs = startTsDynamic;
-        final Timestamp endTs = endTsDynamic;
-
-        // 시작일, 마감일 모두 날짜 단위로 변환 (시간 무시)
         final DateTime startDate = DateTime(
-          startTs.toDate().year,
-          startTs.toDate().month,
-          startTs.toDate().day,
+          startTsDynamic.toDate().year,
+          startTsDynamic.toDate().month,
+          startTsDynamic.toDate().day,
         );
-
         final DateTime endDate = DateTime(
-          endTs.toDate().year,
-          endTs.toDate().month,
-          endTs.toDate().day,
+          endTsDynamic.toDate().year,
+          endTsDynamic.toDate().month,
+          endTsDynamic.toDate().day,
         );
 
-        // 시작일부터 마감일까지 날짜를 모두 돌면서 이벤트 등록
         for (
           DateTime date = startDate;
           !date.isAfter(endDate);
@@ -97,7 +87,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
       }
 
       if (!mounted) return;
-
       setState(() {
         _events = events;
         _selectedEvents = _getEventsForDay(_selectedDay!);
@@ -107,77 +96,10 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     }
   }
 
-  /// 특정 날짜에 해당하는 이벤트 리스트 반환 (없으면 빈 리스트)
   List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
     return _events[DateTime(day.year, day.month, day.day)] ?? [];
   }
 
-  /// 이벤트 상세보기 다이얼로그 표시
-  void _showEventDetailDialog(Map<String, dynamic> event) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(event['title'] ?? '제목 없음'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('과목: ${event['subject'] ?? '없음'}'),
-              Text('카테고리: ${event['category'] ?? '없음'}'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('닫기'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _navigateToEditPage(event);
-              },
-              child: const Text('수정'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) {
-                    return AlertDialog(
-                      title: const Text('삭제 확인'),
-                      content: const Text('정말 삭제하시겠습니까?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('취소'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text(
-                            '삭제',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-
-                if (confirmed == true) {
-                  _deleteTodo(event['docId']);
-                }
-              },
-              child: const Text('삭제', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 일정 삭제 함수 (Firestore에서 문서 삭제 후 목록 다시 로드)
   Future<void> _deleteTodo(String docId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -193,7 +115,6 @@ class _CalendarWidgetState extends State<CalendarWidget> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('일정이 삭제되었습니다.')));
-
       await _fetchTodos();
     } catch (e) {
       ScaffoldMessenger.of(
@@ -202,17 +123,34 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     }
   }
 
-  /// 수정 페이지로 이동 후, 수정 완료시 일정 재로딩
   void _navigateToEditPage(Map<String, dynamic> event) async {
     final result = await Navigator.pushNamed(
       context,
       '/edit_todo',
       arguments: event,
     );
+    if (result == true) await _fetchTodos();
+  }
 
-    if (result == true) {
-      await _fetchTodos();
-    }
+  Color getSubjectColor(String subject) {
+    final hash = subject.hashCode;
+    final hue = (hash % 360).toDouble();
+    final Color color = HSLColor.fromAHSL(1.0, hue, 0.6, 0.6).toColor();
+    final Color tonedColor = Color.lerp(
+      color,
+      const Color.fromARGB(255, 255, 255, 255),
+      0.1,
+    )!;
+    return tonedColor.withOpacity(0.85);
+  }
+
+  void _showEditRestrictionMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('일정 수정/삭제는 일정 화면 일정 카드 클릭 시 가능합니다.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -233,97 +171,55 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                 _focusedDay = focusedDay;
                 _selectedEvents = _getEventsForDay(selectedDay);
               });
-              if (widget.onDateSelected != null) {
-                widget.onDateSelected!(selectedDay);
-              }
+              widget.onDateSelected?.call(selectedDay);
             },
-            onFormatChanged: (format) {
-              setState(() {
-                _calendarFormat = format;
-              });
-            },
-            onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay;
-            },
+            onFormatChanged: (format) =>
+                setState(() => _calendarFormat = format),
+            onPageChanged: (focusedDay) => _focusedDay = focusedDay,
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(
                 color: Colors.deepPurple.shade100,
                 shape: BoxShape.circle,
               ),
-              selectedDecoration: BoxDecoration(
+              selectedDecoration: const BoxDecoration(
                 color: Colors.deepPurple,
                 shape: BoxShape.circle,
               ),
-              markerDecoration: BoxDecoration(shape: BoxShape.circle),
-              markersMaxCount: 4,
             ),
             calendarBuilders: CalendarBuilders(
-              // 일정 마커 커스터마이징 (카테고리별 dot + +n 표시)
               markerBuilder: (context, date, events) {
                 if (events.isEmpty) return const SizedBox.shrink();
 
-                // 최대 3개까지만 표시
-                final displayedEvents = events.take(3).toList();
-                final remaining = events.length - displayedEvents.length;
+                final displayCount = events.length > 3 ? 3 : events.length;
+                final remainingCount = events.length - displayCount;
 
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // 카테고리별 dot 표시
-                      ...displayedEvents.map((event) {
-                        Color color;
-
-                        // event가 dynamic일 수 있으니 Map<String, dynamic>으로 캐스팅 후 접근
-                        final Map<String, dynamic> e =
-                            event as Map<String, dynamic>;
-
-                        // category가 null일 경우 '기타'로 기본 처리
-                        final String category = e['category'] ?? '기타';
-
-                        switch (category) {
-                          case '시험':
-                            color = Colors.lightBlue;
-                            break;
-                          case '과제':
-                            color = Colors.red;
-                            break;
-                          case '팀플':
-                            color = Colors.purple;
-                            break;
-                          case '기타':
-                            color = Colors.green;
-                            break;
-                          default:
-                            color = Colors.grey;
-                        }
-
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        );
-                      }).toList(),
-
-                      // 일정이 많을 경우 +n 표시
-                      if (remaining > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 2),
-                          child: Text(
-                            '+$remaining',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ...events.take(displayCount).map((eventObj) {
+                      final event = eventObj as Map<String, dynamic>;
+                      final subject = (event['subject'] ?? '기타').toString();
+                      final color = getSubjectColor(subject);
+                      return Container(
+                        width: 6,
+                        height: 6,
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
                         ),
-                    ],
-                  ),
+                      );
+                    }),
+                    if (remainingCount > 0)
+                      Text(
+                        '+$remainingCount',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -335,65 +231,110 @@ class _CalendarWidgetState extends State<CalendarWidget> {
           ),
           const SizedBox(height: 8),
           if (_selectedEvents.isEmpty)
-            Text(
-              '${_selectedDay?.toLocal().toIso8601String().substring(0, 10)} 일정이 없습니다.',
-            )
-          else
-            ..._selectedEvents.map(
-              (event) => Card(
-                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                color: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide.none,
-                ),
-                child: ListTile(
-                  title: Text(event['title'] ?? '제목 없음'),
-                  subtitle: Text(
-                    '${event['category'] ?? ''} · ${event['subject'] ?? ''}',
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+              color: gray2,
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SizedBox(
+                width: 300,
+                height: 31,
+                child: const Center(
+                  child: Text(
+                    '일정이 없습니다',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
-                  trailing: _buildDdayTag(event),
-                  onTap: () => _showEventDetailDialog(event),
                 ),
               ),
-            ),
+            )
+          else
+            ..._selectedEvents.map((eventObj) {
+              final event = eventObj as Map<String, dynamic>;
+              final subject = (event['subject'] ?? '기타').toString();
+              final subjectColor = getSubjectColor(subject);
+
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                color: subjectColor,
+                elevation: 3,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: GestureDetector(
+                  onTap: () {
+                    if (widget.isHome) {
+                      _showEditRestrictionMessage();
+                    } else {
+                      _navigateToEditPage(event);
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${event['subject'] ?? ''}/${event['category'] ?? ''}/${event['title'] ?? ''}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        _buildDdayTag(event),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
           const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  /// D-Day 태그 위젯 생성
-  Widget? _buildDdayTag(Map<String, dynamic> event) {
-    if (event['startDate'] == null) return null;
+  /// ✅ D-day 계산: 마감일(endDate) 기준
+  Widget _buildDdayTag(Map<String, dynamic> event) {
+    if (event['endDate'] == null) return const SizedBox.shrink();
 
-    final dynamic tsDynamic = event['startDate'];
-    if (tsDynamic is! Timestamp) return null;
+    final dynamic tsDynamic = event['endDate'];
+    if (tsDynamic is! Timestamp) return const SizedBox.shrink();
 
-    final Timestamp ts = tsDynamic;
-    final DateTime date = ts.toDate();
-
+    final DateTime endDate = tsDynamic.toDate();
     final DateTime now = DateTime.now();
-    final DateTime dateOnly = DateTime(date.year, date.month, date.day);
+    final DateTime endOnly = DateTime(endDate.year, endDate.month, endDate.day);
     final DateTime nowOnly = DateTime(now.year, now.month, now.day);
+    final int difference = endOnly.difference(nowOnly).inDays;
 
-    final int difference = dateOnly.difference(nowOnly).inDays;
-
-    if (difference == 0) {
-      return const Chip(
-        label: Text('D-Day', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.blue,
+    if (difference < 0) {
+      return const Text(
+        '종료',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       );
-    } else if (difference > 0) {
-      return Chip(
-        label: Text('D-$difference', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.blueGrey,
+    } else if (difference == 0) {
+      return const Text(
+        'D-Day',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       );
     } else {
-      return const Chip(
-        label: Text('종료', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.grey,
+      return Text(
+        'D-$difference',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
       );
     }
   }
