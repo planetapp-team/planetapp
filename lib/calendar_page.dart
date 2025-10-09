@@ -1,5 +1,9 @@
 //calendar_page.dart
-// 캘린더 페이지: 사용자의 일정 데이터를 날짜별로 시각화 및 리스트로 보여주는 화면
+// 캘린더 페이지:
+// 사용자의 일정 데이터를 날짜별로 시각화 및
+// 리스트로 보여주는 화면
+// 로그인한 사용자별 데이터를 보여주는 화면형식(UI)
+// 캘린더 화면에서 보여주는
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart'; // 캘린더 위젯
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore 사용
