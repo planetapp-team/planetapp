@@ -1,32 +1,27 @@
 // natural_input_page.dart
-// 기능:
-// - 자연어로 일정 텍스트 입력
-// - "자동 분류하기" 버튼으로 입력 내용 자동 분류
-// - 자동 분류 결과(날짜, 과목, 카테고리) 표시 및 수정 가능한 드롭다운 제공
-// - 시작일, 마감일 날짜 및 시간 선택 다이얼로그
-// - "저장하기" 버튼으로 Firestore에 일정 저장
-// - 저장 후 화면 초기화 및 부모 위젯에 날짜 변경 알림
-// - 저장 시 마감일 기준 5분 전에 로컬 알림 예약 기능 추가 (flutter_local_notifications 활용)
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // 날짜 포맷팅
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore Timestamp
-import 'package:firebase_auth/firebase_auth.dart'; // Firebase 인증
+// 문장으로 일정 저장 가능
+// 자동 분류
+// 자동 뷴류 결과
+// 시작일,마감일, 과목, 제목, 카테고리, 메모, 알림 받기(홈 화면 상단 배너 반영)
 
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 로컬 알림
-import 'package:timezone/timezone.dart' as tz; // 타임존
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
-import 'calendar_widget.dart'; // 캘린더 위젯 임포트
+import 'calendar_widget.dart';
+import 'services/category_classifier.dart';
+import 'utils/theme.dart'; // AppColors 사용
 
-import 'services/category_classifier.dart'; // 카테고리 분류기 임포트
-
-// flutter_local_notifications 플러그인 인스턴스 생성 (전역으로 사용)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 class NaturalInputPage extends StatefulWidget {
-  final DateTime? selectedDate; // 부모로부터 전달받는 초기 선택 날짜
-  final void Function(DateTime) onDateSelected; // 날짜 변경 시 부모 호출 콜백
+  final DateTime? selectedDate;
+  final void Function(DateTime) onDateSelected;
 
   const NaturalInputPage({
     super.key,
@@ -40,31 +35,28 @@ class NaturalInputPage extends StatefulWidget {
 
 class _NaturalInputPageState extends State<NaturalInputPage> {
   final TextEditingController _inputController = TextEditingController();
+  final TextEditingController _memoController = TextEditingController();
 
-  DateTime? _startDate; // 시작일 (날짜만 사용)
-  DateTime? _endDate; // 마감일 (날짜 + 시간 모두 포함)
+  DateTime? _startDate;
+  DateTime? _endDate;
 
-  String? detectedDate; // 인식된 날짜 문자열 (표시용)
-  String? detectedSubject; // 인식된 과목
-  String? detectedCategory; // 인식된 카테고리
+  String? detectedDate;
+  String? detectedSubject;
+  String? detectedCategory;
 
-  bool showResult = false; // 자동 분류 결과 보여줄지 여부
-  bool isEditing = false; // 텍스트 필드 편집 가능 여부
+  bool showResult = false;
+  bool isEditing = false;
+  bool _notificationEnabled = true;
 
-  // 과목 및 카테고리 선택지
   final List<String> categoryOptions = ['시험', '과제', '팀플', '기타'];
-  final List<String> subjectOptions = ['데이터통신', '모바일프로그래밍', '운영체제', '기타'];
+  final List<String> subjectOptions = [];
 
   @override
   void initState() {
     super.initState();
-    // 타임존 데이터 초기화 (알림 예약 시 필수)
     tzdata.initializeTimeZones();
-
-    // flutter_local_notifications 초기화
     _initLocalNotifications();
 
-    // 초기 선택 날짜가 있으면 시작일로 세팅 및 표시
     if (widget.selectedDate != null) {
       _startDate = widget.selectedDate;
       detectedDate = _formatDate(widget.selectedDate!);
@@ -75,16 +67,15 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
   @override
   void dispose() {
     _inputController.dispose();
+    _memoController.dispose();
     super.dispose();
   }
 
-  /// flutter_local_notifications 초기화 함수
   void _initLocalNotifications() {
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
     const iosSettings = DarwinInitializationSettings();
-
     const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
@@ -92,24 +83,17 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
 
     flutterLocalNotificationsPlugin.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        final payload = response.payload;
-        if (payload != null) {
-          // 알림 클릭 시 특정 화면으로 이동 (필요 시 구현)
-          // Navigator.pushNamed(context, '/todo_test');
-        }
-      },
+      onDidReceiveNotificationResponse:
+          (NotificationResponse response) async {},
     );
   }
 
-  // 날짜를 "yyyy-MM-dd (요일)" 형태의 한글 문자열로 포맷팅
   String _formatDate(DateTime date) {
     const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
     final dayKR = weekdays[date.weekday - 1];
     return '${DateFormat('yyyy-MM-dd').format(date)} ($dayKR)';
   }
 
-  // 입력 문자열에서 "X월 Y일" 형태의 날짜 추출 함수
   DateTime? extractDateFromInput(String input) {
     final regExp = RegExp(r'(\d{1,2})월\s*(\d{1,2})일');
     final match = regExp.firstMatch(input);
@@ -122,7 +106,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     return null;
   }
 
-  // "자동 분류하기" 버튼 누르면 호출되는 함수
   Future<void> classifyInput() async {
     String input = _inputController.text.trim();
     if (input.isEmpty) {
@@ -133,11 +116,9 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
 
     setState(() {
-      // 시작일이 이미 있으면 그대로 표시
       if (_startDate != null) {
         detectedDate = _formatDate(_startDate!);
       } else {
-        // 입력문자열에서 날짜 추출 시도
         DateTime? extractedDate = extractDateFromInput(input);
         if (extractedDate != null) {
           _startDate = extractedDate;
@@ -148,7 +129,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
         }
       }
 
-      // 과목 자동 인식: subjectOptions 목록에 포함된 단어 중 첫번째 발견 항목 선택
       detectedSubject = null;
       for (var subject in subjectOptions) {
         if (input.contains(subject)) {
@@ -156,24 +136,23 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
           break;
         }
       }
-      // 과목 인식 실패 시 입력 텍스트 앞부분 단어로 임시 지정
       if (detectedSubject == null) {
         String temp = input
-            .replaceAll(RegExp(r'\d{1,2}월\s*\d{1,2}일'), '')
+            .replaceAll(RegExp(r'\d{1,2}월\s*\d{1,2}일'), ' ')
             .trim();
         List<String> parts = temp.split(RegExp(r'\s+'));
         detectedSubject = parts.isNotEmpty ? parts[0] : '일정';
       }
 
-      // 카테고리 자동 분류 함수 호출 (외부 함수)
       detectedCategory = classifyCategory(input);
 
-      showResult = true; // 결과 표시 모드 활성화
-      isEditing = false; // 입력 필드 읽기 전용으로 설정
+      showResult = true;
+      isEditing = false;
+      _memoController.text = '';
+      _notificationEnabled = true;
     });
   }
 
-  // 저장하기 버튼 누르면 Firestore에 일정 저장 + 5분 전 알림 예약
   Future<void> saveTodo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -183,7 +162,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       return;
     }
 
-    // 자동 분류된 필수 데이터가 없으면 저장 불가 안내
     if (_startDate == null ||
         detectedSubject == null ||
         detectedCategory == null) {
@@ -194,7 +172,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
 
     try {
-      // 마감일이 null이면 시작일 기준 오후 11시 59분으로 설정 (마감일이 없으면 시작일을 마감일로 간주)
       final deadlineDate =
           _endDate ??
           DateTime(
@@ -206,37 +183,43 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
             0,
           );
 
-      // Firestore에 저장할 데이터 객체 생성
       final todoData = {
         'title': _inputController.text,
-        'startDate': Timestamp.fromDate(_startDate!), // 시작일 저장
-        'endDate': Timestamp.fromDate(deadlineDate), // 마감일 저장 (날짜+시간 포함)
+        'startDate': Timestamp.fromDate(_startDate!),
+        'endDate': Timestamp.fromDate(deadlineDate),
         'subject': detectedSubject,
         'category': detectedCategory,
+        'memo': _memoController.text.trim(),
+        'notification': _notificationEnabled,
         'createdAt': Timestamp.now(),
       };
 
-      // Firestore 경로: todos/{userId}/userTodos 컬렉션
       final todoRef = FirebaseFirestore.instance
           .collection('todos')
           .doc(user.uid)
           .collection('userTodos');
 
-      // 새 문서 추가 및 문서 ID 획득
       final newDocRef = await todoRef.add(todoData);
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('일정이 저장되었습니다!')));
 
-      // 5분 전 알림 예약 호출
-      _scheduleNotification(newDocRef.id, _inputController.text, deadlineDate);
+      if (_notificationEnabled) {
+        await _scheduleNotification(
+          newDocRef.id,
+          _inputController.text,
+          deadlineDate,
+        );
+      } else {
+        await _cancelNotification(newDocRef.id);
+      }
 
-      widget.onDateSelected(_startDate!); // 부모 위젯에 날짜 변경 알림
+      widget.onDateSelected(_startDate!);
 
-      // 저장 후 입력 및 상태 초기화
       setState(() {
         _inputController.clear();
+        _memoController.clear();
         detectedDate = null;
         detectedSubject = null;
         detectedCategory = null;
@@ -244,6 +227,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
         _startDate = null;
         _endDate = null;
         isEditing = false;
+        _notificationEnabled = true;
       });
     } catch (e) {
       ScaffoldMessenger.of(
@@ -252,34 +236,26 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     }
   }
 
-  /// 5분 전 로컬 알림 예약 함수
-  /// [id]는 알림 고유 ID (여기서는 Firestore 문서 ID를 해시코드로 변환),
-  /// [title]은 알림 제목 (일정 제목),
-  /// [deadline]은 마감일(끝나는 날짜 + 시간)
-  void _scheduleNotification(String id, String title, DateTime deadline) async {
+  Future<void> _scheduleNotification(
+    String id,
+    String title,
+    DateTime deadline,
+  ) async {
     final notificationId = id.hashCode;
-
-    // 알림 시간: 마감일 기준 5분 전
     final scheduledTime = deadline.subtract(const Duration(minutes: 5));
-
-    // 현재 시간보다 과거면 예약하지 않음
-    if (scheduledTime.isBefore(DateTime.now())) {
-      debugPrint('알림 예약 실패: 이미 지난 시간입니다.');
-      return;
-    }
+    if (scheduledTime.isBefore(DateTime.now())) return;
 
     await flutterLocalNotificationsPlugin.zonedSchedule(
       notificationId,
       '일정 마감 5분 전 알림',
       '$title 일정이 곧 마감됩니다.',
       tz.TZDateTime.from(scheduledTime, tz.local),
-      NotificationDetails(
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           'deadline_channel',
           'Deadline Notifications',
           importance: Importance.max,
           priority: Priority.high,
-          ticker: 'ticker',
         ),
         iOS: DarwinNotificationDetails(),
       ),
@@ -288,28 +264,81 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: 'deadline_payload',
     );
-
-    debugPrint('알림 예약 완료: $title, 예약시간: $scheduledTime');
   }
 
-  // 시작일 선택 다이얼로그 표시
+  Future<void> _cancelNotification(String id) async {
+    final notificationId = id.hashCode;
+    await flutterLocalNotificationsPlugin.cancel(notificationId);
+  }
+
+  /// ✅ 날짜/시간 선택 커스텀 다이얼로그 (확인/취소 한글 표시)
   Future<void> _selectStartDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final pickedDate = await showDatePicker(
       context: context,
       initialDate: _startDate ?? now,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 5),
+      helpText: '날짜 선택',
+      cancelText: '취소',
+      confirmText: '확인',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            dialogBackgroundColor: Colors.white,
+            colorScheme: ColorScheme.light(
+              primary: AppColors.yellow,
+              onPrimary: AppColors.black,
+              onSurface: AppColors.black,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (picked != null) {
+
+    if (pickedDate != null) {
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: _startDate != null
+            ? TimeOfDay(hour: _startDate!.hour, minute: _startDate!.minute)
+            : TimeOfDay.now(),
+        cancelText: '취소',
+        confirmText: '확인',
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              dialogBackgroundColor: Colors.white,
+              colorScheme: ColorScheme.light(
+                primary: AppColors.yellow,
+                onPrimary: AppColors.black,
+                onSurface: AppColors.black,
+              ),
+              textButtonTheme: TextButtonThemeData(
+                style: TextButton.styleFrom(foregroundColor: Colors.black),
+              ),
+            ),
+            child: child!,
+          );
+        },
+      );
+
       setState(() {
-        _startDate = picked;
-        detectedDate = _formatDate(picked);
+        _startDate = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          pickedTime?.hour ?? 0,
+          pickedTime?.minute ?? 0,
+        );
+        detectedDate = _formatDate(_startDate!);
       });
     }
   }
 
-  // 마감일 선택 다이얼로그 (날짜 + 시간 선택)
   Future<void> _selectEndDate() async {
     if (_startDate == null) {
       ScaffoldMessenger.of(
@@ -318,196 +347,289 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       return;
     }
 
-    // 1. 날짜 선택
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _endDate ?? _startDate!,
       firstDate: _startDate!,
       lastDate: DateTime(_startDate!.year + 5),
+      helpText: '날짜 선택',
+      cancelText: '취소',
+      confirmText: '확인',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            dialogBackgroundColor: Colors.white,
+            colorScheme: ColorScheme.light(
+              primary: AppColors.yellow,
+              onPrimary: AppColors.black,
+              onSurface: AppColors.black,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (pickedDate != null) {
-      // 2. 시간 선택 (기본값: 오후 11시 59분)
       final pickedTime = await showTimePicker(
         context: context,
         initialTime: _endDate != null
             ? TimeOfDay(hour: _endDate!.hour, minute: _endDate!.minute)
             : const TimeOfDay(hour: 23, minute: 59),
+        cancelText: '취소',
+        confirmText: '확인',
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              dialogBackgroundColor: Colors.white,
+              colorScheme: ColorScheme.light(
+                primary: AppColors.yellow,
+                onPrimary: AppColors.black,
+                onSurface: AppColors.black,
+              ),
+              textButtonTheme: TextButtonThemeData(
+                style: TextButton.styleFrom(foregroundColor: Colors.black),
+              ),
+            ),
+            child: child!,
+          );
+        },
       );
 
-      if (pickedTime != null) {
-        // 날짜 + 시간 합쳐서 _endDate에 저장
-        final combinedDateTime = DateTime(
+      setState(() {
+        _endDate = DateTime(
           pickedDate.year,
           pickedDate.month,
           pickedDate.day,
-          pickedTime.hour,
-          pickedTime.minute,
+          pickedTime?.hour ?? 23,
+          pickedTime?.minute ?? 59,
         );
-        setState(() {
-          _endDate = combinedDateTime;
-        });
-      } else {
-        // 시간 선택 취소 시, 날짜만 저장하고 시간은 기본 23:59로 설정
-        final defaultTimeDate = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          23,
-          59,
-        );
-        setState(() {
-          _endDate = defaultTimeDate;
-        });
-      }
+      });
     }
   }
 
-  // D-Day 텍스트 생성 함수 (남은 날짜/오늘/지난 날짜 표시)
-  String getDDayText(DateTime deadline) {
-    final now = DateTime.now();
-    final diff = deadline
-        .difference(DateTime(now.year, now.month, now.day))
-        .inDays;
+  String getDDayText(DateTime start, DateTime end) {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final endDate = DateTime(end.year, end.month, end.day);
 
-    if (diff > 0) {
-      return 'D-${diff}'; // 마감일까지 남은 날짜
-    } else if (diff == 0) {
-      return 'D-DAY'; // 오늘이 마감일
+    if (todayDate.isBefore(endDate)) {
+      final diff = endDate.difference(todayDate).inDays;
+      return diff == 0 ? 'D-Day' : 'D-$diff';
+    } else if (todayDate.isAfter(endDate)) {
+      final diff = todayDate.difference(endDate).inDays;
+      return 'D+${diff}';
     } else {
-      return 'D+${-diff}'; // 마감일 지남
+      return 'D-Day';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('자연어 일정 추가')),
+      appBar: AppBar(
+        title: const Text('일정 추가', style: TextStyle(color: AppColors.black)),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // 자연어 일정 입력 필드
             TextField(
               controller: _inputController,
               decoration: const InputDecoration(
                 labelText: '일정을 자연어로 입력하세요',
-                hintText: '예: 7월 9일 데이터통신 과제 제출',
+                labelStyle: TextStyle(color: AppColors.black),
               ),
-              readOnly: !isEditing && showResult, // 결과 표시 시 읽기전용
+              style: const TextStyle(color: AppColors.black),
+              readOnly: !isEditing && showResult,
               maxLines: null,
-              autofocus: isEditing || !showResult, // 편집모드나 결과 없으면 자동 포커스
+              autofocus: isEditing || !showResult,
             ),
             const SizedBox(height: 12),
-
-            // 자동 분류하기 버튼
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.yellow,
+              ),
               onPressed: classifyInput,
-              child: const Text('자동 분류하기'),
+              child: const Text(
+                '자동 분류',
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(height: 20),
-
-            // 자동 분류 결과 표시
             if (showResult)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '📌 자동 분류 결과',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 날짜 표시 및 선택 버튼
-                  Row(
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('날짜: '),
-                      TextButton(
-                        onPressed: _startDate == null ? null : _selectStartDate,
-                        child: Text(detectedDate ?? '선택 안됨'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 과목 텍스트 표시 (테두리 없이)
-                  Row(
-                    children: [
-                      const Text('과목: '),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          detectedSubject ?? '',
-                          style: const TextStyle(fontSize: 16),
+                      const Text(
+                        '📌 자동 분류 결과',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.black,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 카테고리 드롭다운 (기존 유지)
-                  Row(
-                    children: [
-                      const Text('카테고리: '),
-                      DropdownButton<String>(
-                        value: categoryOptions.contains(detectedCategory)
-                            ? detectedCategory
-                            : categoryOptions.first,
-                        items: categoryOptions
-                            .map(
-                              (e) => DropdownMenuItem(value: e, child: Text(e)),
-                            )
-                            .toList(),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text(
+                            '시작일: ',
+                            style: TextStyle(color: AppColors.black),
+                          ),
+                          TextButton(
+                            onPressed: _selectStartDate,
+                            child: Text(
+                              _startDate != null
+                                  ? DateFormat(
+                                      'yyyy-MM-dd hh:mm a',
+                                    ).format(_startDate!)
+                                  : '선택 안됨',
+                              style: const TextStyle(color: AppColors.black),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          const Text(
+                            '마감일: ',
+                            style: TextStyle(color: AppColors.black),
+                          ),
+                          TextButton(
+                            onPressed: _selectEndDate,
+                            child: Text(
+                              _endDate != null
+                                  ? DateFormat(
+                                          'yyyy-MM-dd hh:mm a',
+                                        ).format(_endDate!) +
+                                        " (" +
+                                        getDDayText(_startDate!, _endDate!) +
+                                        ")"
+                                  : '선택 안됨',
+                              style: const TextStyle(color: AppColors.black),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text(
+                            '과목: ',
+                            style: TextStyle(color: AppColors.black),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              detectedSubject ?? '',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: AppColors.black,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text(
+                            '카테고리: ',
+                            style: TextStyle(color: AppColors.black),
+                          ),
+                          DropdownButton<String>(
+                            value: categoryOptions.contains(detectedCategory)
+                                ? detectedCategory
+                                : categoryOptions.first,
+                            items: categoryOptions
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e,
+                                    child: Text(
+                                      e,
+                                      style: const TextStyle(
+                                        color: AppColors.black,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                detectedCategory = value;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _memoController,
+                        decoration: const InputDecoration(
+                          labelText: '메모',
+                          border: OutlineInputBorder(),
+                          labelStyle: TextStyle(color: AppColors.black),
+                        ),
+                        style: const TextStyle(color: AppColors.black),
+                        maxLines: null,
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        title: const Text(
+                          '알림 받기',
+                          style: TextStyle(color: AppColors.black),
+                        ),
+                        value: _notificationEnabled,
                         onChanged: (value) {
                           setState(() {
-                            detectedCategory = value;
+                            _notificationEnabled = value;
                           });
                         },
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.gray2,
+                            ),
+                            onPressed: () => setState(() => isEditing = true),
+                            child: const Text(
+                              '수정',
+                              style: TextStyle(
+                                color: AppColors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.yellow,
+                            ),
+                            onPressed: saveTodo,
+                            child: const Text(
+                              '저장',
+                              style: TextStyle(
+                                color: AppColors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-
-                  // 마감일 날짜 및 시간 선택 및 D-Day 표시
-                  Row(
-                    children: [
-                      const Text('마감일: '),
-                      TextButton(
-                        onPressed: _selectEndDate,
-                        child: Text(
-                          _endDate != null
-                              ? DateFormat(
-                                      'yyyy-MM-dd HH:mm',
-                                    ).format(_endDate!) +
-                                    " (" +
-                                    getDDayText(_endDate!) +
-                                    ")"
-                              : '선택 안됨',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // 수정 및 저장 버튼
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            isEditing = true; // 편집 모드 전환
-                          });
-                        },
-                        child: const Text('수정하기'),
-                      ),
-                      ElevatedButton(
-                        onPressed: saveTodo, // Firestore 저장 함수 호출
-                        child: const Text('저장하기'),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
           ],
         ),
