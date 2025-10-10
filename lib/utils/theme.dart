@@ -14,7 +14,7 @@ class AppColors {
   static const gray2 = Color(0xFFD9D9D9); // #D9D9D9
   static const red = Color(0xFFFF4141); // #FF4141
   static const black = Color(0xFF000000); // #000000
-  static const white = Color(0xFFFFFFFF); // #FFFFFF
+  static const white = Color(0xFFFFFFFF); // ✅ 순수 흰색
 
   // 메인 테마 색상 (앱 대표 컬러로 지정)
   static const primary = yellow;
