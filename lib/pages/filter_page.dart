@@ -1,16 +1,15 @@
 // filter_page.dart
-// 로그인한 사용자의 할 일 목록에서
-// 선택한 과목과 카테고리에 따라 Firestore 쿼리를 수행하여
-// 필터된 결과를 리스트로 출력하는 화면
-//
-// 카테고리: 시험 / 과제 / 팀플 / 기타 (기본 카테고리 고정)
-// 사용자 추가 카테고리 관리 (추가/수정/삭제 가능)
-// 과목: 사용자가 입력한 모든 과목 목록에서 선택 가능
+
+// 저장된 일정을 날짜(시작일/마감일), 과목, 카테고리로 검색 가능
+// 날짜: 00월 00일 형식 (예: 9월 11일 ~ 9월 17일)
+// 과목: 드롭다운, 하나 선택 가능
+// 카테고리: 체크박스, 복수 선택 가능
+// 날짜/과목/카테고리 중 하나만 선택해도 검색 가능
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'todo_test_page.dart';
+import '../utils/theme.dart';
 
 class FilterPage extends StatefulWidget {
   const FilterPage({super.key});
@@ -20,35 +19,28 @@ class FilterPage extends StatefulWidget {
 }
 
 class _FilterPageState extends State<FilterPage> {
-  String? selectedSubject; // 선택된 과목
-  List<String> selectedCategories = []; // 선택된 카테고리들
+  String? selectedSubject;
+  List<String> selectedCategories = [];
+  List<String> subjects = [];
+  final List<String> defaultCategories = ['시험', '과제', '팀플', '기타'];
+  List<String> userCategories = [];
+  DateTimeRange? selectedDateRange;
+  List<Map<String, dynamic>> filteredTodos = [];
+  bool showSelectConditionMessage = false;
 
-  List<String> subjects = ['모든 과목']; // 과목 목록 (기본값 '모든 과목')
-  final List<String> defaultCategories = // 기본 카테고리 (삭제/수정 불가)
-  [
-    '시험',
-    '과제',
-    '팀플',
-    '기타',
-  ];
-  List<String> userCategories = []; // 사용자 추가 카테고리 (추가/수정/삭제 가능)
-
-  // 전체 카테고리 = 기본 + 사용자 추가
   List<String> get categories => [...defaultCategories, ...userCategories];
-
-  List<Map<String, dynamic>> filteredTodos = []; // 필터링된 할 일 데이터 리스트
 
   @override
   void initState() {
     super.initState();
-    loadSubjectsFromFirestore(); // 과목 불러오기
-    loadUserCategoriesFromFirestore(); // 사용자 카테고리 불러오기
+    loadSubjectsFromFirestore();
+    loadUserCategoriesFromFirestore();
   }
 
-  // Firestore에서 사용자 과목 조회하여 subjects 업데이트
   Future<void> loadSubjectsFromFirestore() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
     final userDocRef = FirebaseFirestore.instance.collection('todos').doc(uid);
     final querySnapshot = await userDocRef.collection('userTodos').get();
 
@@ -60,15 +52,15 @@ class _FilterPageState extends State<FilterPage> {
         .toList();
 
     setState(() {
-      subjects = ['모든 과목', ...fetchedSubjects];
-      selectedSubject = '모든 과목';
+      subjects = fetchedSubjects;
+      selectedSubject = null;
     });
   }
 
-  // Firestore에서 사용자 추가 카테고리 불러오기
   Future<void> loadUserCategoriesFromFirestore() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
     final userDocRef = FirebaseFirestore.instance.collection('users').doc(uid);
     final snapshot = await userDocRef.get();
     final List<dynamic>? fetched = snapshot.data()?['userCategories'];
@@ -78,24 +70,28 @@ class _FilterPageState extends State<FilterPage> {
     });
   }
 
-  // Firestore에 userCategories 저장
-  Future<void> saveUserCategoriesToFirestore() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final userDocRef = FirebaseFirestore.instance.collection('users').doc(uid);
-    await userDocRef.set({
-      'userCategories': userCategories,
-    }, SetOptions(merge: true));
-  }
-
-  // 필터 적용하여 Firestore 쿼리 실행 및 결과 갱신
   void applyFilters() async {
+    if (selectedSubject == null &&
+        selectedCategories.isEmpty &&
+        selectedDateRange == null) {
+      setState(() {
+        showSelectConditionMessage = true;
+        filteredTodos = [];
+      });
+      return;
+    }
+
+    setState(() {
+      showSelectConditionMessage = false;
+    });
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
     final userDocRef = FirebaseFirestore.instance.collection('todos').doc(uid);
     Query query = userDocRef.collection('userTodos');
 
-    if (selectedSubject != null && selectedSubject != '모든 과목') {
+    if (selectedSubject != null) {
       query = query.where('subject', isEqualTo: selectedSubject);
     }
     if (selectedCategories.isNotEmpty) {
@@ -105,247 +101,379 @@ class _FilterPageState extends State<FilterPage> {
     final snapshot = await query.get();
     final docs = snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      data['id'] = doc.id;
+      data['docId'] = doc.id;
       return data;
     }).toList();
 
+    final filteredByDate = selectedDateRange != null
+        ? docs.where((todo) {
+            final startDateTimestamp = todo['startDate'];
+            final endDateTimestamp = todo['endDate'];
+
+            if (startDateTimestamp == null && endDateTimestamp == null)
+              return false;
+
+            final startDate = startDateTimestamp != null
+                ? (startDateTimestamp as Timestamp).toDate()
+                : (endDateTimestamp as Timestamp).toDate();
+            final endDate = endDateTimestamp != null
+                ? (endDateTimestamp as Timestamp).toDate()
+                : startDate;
+
+            final todoStart = DateTime(
+              startDate.year,
+              startDate.month,
+              startDate.day,
+            );
+            final todoEnd = DateTime(endDate.year, endDate.month, endDate.day);
+
+            final filterStart = DateTime(
+              selectedDateRange!.start.year,
+              selectedDateRange!.start.month,
+              selectedDateRange!.start.day,
+            );
+            final filterEnd = DateTime(
+              selectedDateRange!.end.year,
+              selectedDateRange!.end.month,
+              selectedDateRange!.end.day,
+            );
+
+            return todoEnd.isAfter(
+                  filterStart.subtract(const Duration(days: 1)),
+                ) &&
+                todoStart.isBefore(filterEnd.add(const Duration(days: 1)));
+          }).toList()
+        : docs;
+
     setState(() {
-      filteredTodos = docs;
+      filteredTodos = filteredByDate;
     });
   }
 
-  // 카테고리 수정/추가 다이얼로그 (항상 최신 categories 사용)
-  void showEditCategoryDialog(Map<String, dynamic> todo) {
-    String selected = todo['category'] ?? defaultCategories.first;
-    final newCategoryController = TextEditingController();
-
-    // 매번 최신 리스트 생성 및 중복 제거
-    List<String> currentCategories = categories.toSet().toList();
-    if (!currentCategories.contains(selected)) {
-      selected = currentCategories.first;
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return '-';
+    if (timestamp is Timestamp) {
+      final date = timestamp.toDate();
+      return "${date.month}월 ${date.day}일";
+    } else if (timestamp is DateTime) {
+      final date = timestamp;
+      return "${date.month}월 ${date.day}일";
+    } else {
+      return '-';
     }
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: const Text('카테고리 수정 / 추가'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 기존 카테고리 선택 드롭다운
-                  DropdownButton<String>(
-                    value: selected,
-                    isExpanded: true,
-                    onChanged: (value) {
-                      if (value != null) {
-                        setStateDialog(() {
-                          selected = value;
-                        });
-                      }
-                    },
-                    items: currentCategories.map((cat) {
-                      return DropdownMenuItem(value: cat, child: Text(cat));
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  // 새 카테고리 입력 및 추가
-                  TextField(
-                    controller: newCategoryController,
-                    decoration: const InputDecoration(
-                      labelText: '새 카테고리 입력',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final newCat = newCategoryController.text.trim();
-                      if (newCat.isEmpty) return;
-                      if (!currentCategories.contains(newCat)) {
-                        setStateDialog(() {
-                          userCategories.add(newCat);
-                          selected = newCat;
-                          currentCategories = categories.toSet().toList();
-                        });
-                        await saveUserCategoriesToFirestore();
-                      } else {
-                        setStateDialog(() {
-                          selected = newCat;
-                        });
-                      }
-                      newCategoryController.clear();
-                    },
-                    child: const Text('추가'),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('취소'),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    Navigator.pop(context);
-                    final uid = FirebaseAuth.instance.currentUser?.uid;
-                    if (uid == null) return;
-                    final todoId = todo['id'];
-                    if (todoId == null) return;
-
-                    await FirebaseFirestore.instance
-                        .collection('todos')
-                        .doc(uid)
-                        .collection('userTodos')
-                        .doc(todoId)
-                        .update({'category': selected});
-
-                    applyFilters();
-                  },
-                  child: const Text('저장'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
-  // 사용자 추가 카테고리 삭제 다이얼로그
-  void showDeleteCategoryDialog(String category) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('카테고리 삭제 확인'),
-          content: Text('카테고리 "\$category"를 삭제하시겠습니까?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                userCategories.remove(category);
-                await saveUserCategoriesToFirestore();
-                setState(() {});
-              },
-              child: const Text('삭제'),
-            ),
-          ],
-        );
-      },
-    );
+  void resetFilters() {
+    setState(() {
+      selectedDateRange = null;
+      selectedSubject = null;
+      selectedCategories.clear();
+      filteredTodos = [];
+      showSelectConditionMessage = false;
+    });
+  }
+
+  Future<void> deleteTodoAndRefresh(Map<String, dynamic> todo) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final docId = todo['docId'];
+    if (docId == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('todos')
+        .doc(uid)
+        .collection('userTodos')
+        .doc(docId)
+        .delete();
+
+    applyFilters();
+  }
+
+  Color getSubjectColor(String subject) {
+    final hash = subject.hashCode;
+    final hue = (hash % 360).toDouble();
+    return HSLColor.fromAHSL(1.0, hue, 0.6, 0.6).toColor();
+  }
+
+  Widget _buildDdayTag(Map<String, dynamic> todo) {
+    if (todo['startDate'] == null) return const SizedBox.shrink();
+    final dynamic tsDynamic = todo['startDate'];
+    if (tsDynamic is! Timestamp) return const SizedBox.shrink();
+
+    final DateTime date = tsDynamic.toDate();
+    final DateTime now = DateTime.now();
+
+    final DateTime dateOnly = DateTime(date.year, date.month, date.day);
+    final DateTime nowOnly = DateTime(now.year, now.month, now.day);
+    final int difference = dateOnly.difference(nowOnly).inDays;
+
+    if (difference == 0) {
+      return const Text(
+        'D-Day',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      );
+    } else if (difference > 0) {
+      return Text(
+        'D-$difference',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+    } else {
+      return const Text(
+        '종료',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('필터된 할일 보기')),
+      appBar: AppBar(title: const Text('일정 필터')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 과목 선택 드롭다운
-            const Text('과목 선택', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('날짜', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () async {
+                final today = DateTime.now();
+                final firstDate = DateTime(2025, 1, 1);
+                final lastDate = DateTime(3000, 12, 31);
+
+                final pickedRange = await showDateRangePicker(
+                  context: context,
+                  firstDate: firstDate,
+                  lastDate: lastDate,
+                  initialDateRange:
+                      selectedDateRange ??
+                      DateTimeRange(start: today, end: today),
+                  helpText: '기간을 입력하세요.',
+                  cancelText: '취소', // cancle-> 취소 버튼 변경
+                  confirmText: '확인', // ok -> 확인 버튼 변경
+                  builder: (context, child) {
+                    return Theme(
+                      data: Theme.of(context).copyWith(
+                        colorScheme: const ColorScheme.light(
+                          primary: AppColors.yellow,
+                          onPrimary: AppColors.black,
+                          surface: AppColors.white,
+                          onSurface: AppColors.black,
+                        ),
+                        textButtonTheme: TextButtonThemeData(
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.black,
+                          ),
+                        ),
+                      ),
+                      child: child!,
+                    );
+                  },
+                );
+
+                if (pickedRange != null) {
+                  setState(() {
+                    selectedDateRange = DateTimeRange(
+                      start: pickedRange.start,
+                      end: pickedRange.end,
+                    );
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 12,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.gray2),
+                  borderRadius: BorderRadius.circular(6),
+                  color: AppColors.white,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      selectedDateRange != null
+                          ? "${selectedDateRange!.start.month}월 ${selectedDateRange!.start.day}일 ~ ${selectedDateRange!.end.month}월 ${selectedDateRange!.end.day}일"
+                          : '기간을 선택하세요',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: selectedDateRange != null
+                            ? AppColors.black
+                            : AppColors.gray2,
+                      ),
+                    ),
+                    const Icon(Icons.calendar_month),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('과목', style: TextStyle(fontWeight: FontWeight.bold)),
             DropdownButton<String>(
               value: selectedSubject,
               isExpanded: true,
-              items: subjects.map((subject) {
-                return DropdownMenuItem(value: subject, child: Text(subject));
-              }).toList(),
+              hint: const Text('과목을 선택해주세요.'),
+              items: subjects
+                  .map(
+                    (subject) => DropdownMenuItem<String>(
+                      value: subject,
+                      child: Text(subject),
+                    ),
+                  )
+                  .toList(),
               onChanged: (value) {
                 setState(() {
                   selectedSubject = value;
                 });
               },
+              dropdownColor: AppColors.white,
             ),
             const SizedBox(height: 20),
-
-            // 카테고리 선택 체크박스
-            const Text(
-              '카테고리 선택',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Column(
+            const Text('카테고리', style: TextStyle(fontWeight: FontWeight.bold)),
+            Wrap(
+              spacing: 60,
+              runSpacing: 50,
               children: [
-                // 기본 카테고리 (삭제/수정 불가)
-                ...defaultCategories.map((cat) {
-                  return CheckboxListTile(
-                    title: Text(cat),
-                    value: selectedCategories.contains(cat),
-                    onChanged: (checked) {
-                      setState(() {
-                        if (checked == true)
-                          selectedCategories.add(cat);
-                        else
-                          selectedCategories.remove(cat);
-                      });
-                    },
-                  );
-                }),
-                const Divider(),
-                // 사용자 추가 카테고리 (삭제 가능)
-                ...userCategories.map((cat) {
-                  return CheckboxListTile(
-                    title: Text(cat),
-                    value: selectedCategories.contains(cat),
-                    onChanged: (checked) {
-                      setState(() {
-                        if (checked == true)
-                          selectedCategories.add(cat);
-                        else
-                          selectedCategories.remove(cat);
-                      });
-                    },
-                    secondary: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                      onPressed: () => showDeleteCategoryDialog(cat),
+                ...defaultCategories.map(
+                  (cat) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(cat),
+                        Checkbox(
+                          value: selectedCategories.contains(cat),
+                          onChanged: (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                selectedCategories.add(cat);
+                              } else {
+                                selectedCategories.remove(cat);
+                              }
+                            });
+                          },
+                        ),
+                      ],
                     ),
-                  );
-                }),
+                  ),
+                ),
+                ...userCategories.map(
+                  (cat) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(cat),
+                        Checkbox(
+                          value: selectedCategories.contains(cat),
+                          onChanged: (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                selectedCategories.add(cat);
+                              } else {
+                                selectedCategories.remove(cat);
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
-
-            const SizedBox(height: 16),
-            Center(
-              child: ElevatedButton(
-                onPressed: applyFilters,
-                child: const Text('필터 적용'),
-              ),
+            const SizedBox(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: resetFilters,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.gray2,
+                    foregroundColor: AppColors.black,
+                    minimumSize: const Size(100, 40),
+                  ),
+                  child: const Text(
+                    '초기화',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 13),
+                ElevatedButton(
+                  onPressed: applyFilters,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.yellow,
+                    foregroundColor: AppColors.black,
+                    minimumSize: const Size(100, 40),
+                  ),
+                  child: const Text(
+                    '검색',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
-
-            const Divider(height: 32),
+            if (showSelectConditionMessage)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: Text(
+                  '조건을 선택해 주세요.',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 14),
+                ),
+              ),
             const Text('필터 결과', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-
-            // 필터 결과 리스트
             filteredTodos.isEmpty
                 ? const Center(
                     child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
                       child: Text(
-                        '저장된 일정이 없습니다',
+                        '일치하는 일정이 없습니다',
                         style: TextStyle(color: Colors.grey),
                       ),
                     ),
                   )
                 : Column(
                     children: filteredTodos.map((todo) {
+                      final subject = todo['subject'] ?? '기타';
+                      final Color subjectColor = getSubjectColor(subject);
+
                       return Card(
-                        child: ListTile(
-                          title: Text(todo['title'] ?? '제목 없음'),
-                          subtitle: Text(
-                            "과목: ${todo['subject'] ?? '없음'} / 카테고리: ${todo['category'] ?? '없음'}",
+                        margin: const EdgeInsets.symmetric(
+                          vertical: 6,
+                          horizontal: 0,
+                        ),
+                        color: subjectColor,
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.grey),
-                            onPressed: () => showEditCategoryDialog(todo),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${todo['subject'] ?? ''}/${todo['category'] ?? ''}/${todo['title'] ?? ''}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              _buildDdayTag(todo),
+                            ],
                           ),
                         ),
                       );
