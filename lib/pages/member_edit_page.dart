@@ -1,15 +1,8 @@
 // lib/member_edit_page.dart
-// 회원정보 수정 페이지
-// - 닉네임 수정 가능
-// - 비밀번호 변경
-// - 비밀번호 확인
-// - 생년월일 선택
-// - 수정 완료 후 프로필 화면으로 이동
-// - 비밀번호 재설정 버튼 추가 (새 화면 연결)
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/theme.dart';
 
 class MemberEditPage extends StatefulWidget {
   const MemberEditPage({super.key});
@@ -24,7 +17,6 @@ class _MemberEditPageState extends State<MemberEditPage> {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController =
       TextEditingController();
-  final TextEditingController birthController = TextEditingController();
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -48,7 +40,6 @@ class _MemberEditPageState extends State<MemberEditPage> {
           .get();
       if (doc.exists) {
         nicknameController.text = doc.data()?['nickname'] ?? '';
-        birthController.text = doc.data()?['birth'] ?? '';
       } else {
         nicknameController.text = user.displayName ?? '';
       }
@@ -70,31 +61,23 @@ class _MemberEditPageState extends State<MemberEditPage> {
     final nickname = nicknameController.text.trim();
     final password = passwordController.text.trim();
     final confirmPassword = confirmPasswordController.text.trim();
-    final birth = birthController.text.trim();
 
     if (nickname.isEmpty) {
       nicknameError = '닉네임을 입력하세요';
       hasError = true;
     }
     if (password.isEmpty) {
-      passwordError = '비밀번호를 입력하세요';
-      hasError = true;
-    } else if (!RegExp(
-      r'^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$',
-    ).hasMatch(password)) {
-      passwordError = '8자 이상 영문+숫자 포함';
+      passwordError = '현재 비밀번호를 입력하세요';
       hasError = true;
     }
-    if (confirmPassword.isEmpty) {
-      confirmPasswordError = '비밀번호를 한번 더 입력해주세요.';
-      hasError = true;
-    } else if (password != confirmPassword) {
-      confirmPasswordError = '비밀번호가 일치하지 않습니다';
-      hasError = true;
-    }
-    if (birth.isNotEmpty && !RegExp(r'^\d{8}$').hasMatch(birth)) {
-      _showSnackBar('생년월일은 8자리 숫자(YYYYMMDD)로 입력해주세요');
-      hasError = true;
+
+    if (password.isNotEmpty && confirmPassword.isNotEmpty) {
+      if (!RegExp(
+        r'^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$',
+      ).hasMatch(confirmPassword)) {
+        confirmPasswordError = '8자 이상 영문+숫자 포함.';
+        hasError = true;
+      }
     }
 
     if (hasError) {
@@ -105,35 +88,89 @@ class _MemberEditPageState extends State<MemberEditPage> {
     setState(() => _isLoading = true);
 
     try {
+      final cred = EmailAuthProvider.credential(
+        email: user.email!,
+        password: password,
+      );
+      await user.reauthenticateWithCredential(cred);
+
+      final existing = await FirebaseFirestore.instance
+          .collection('users')
+          .where('nickname', isEqualTo: nickname)
+          .get();
+
+      if (existing.docs.isNotEmpty && existing.docs.first.id != user.uid) {
+        nicknameError = '사용중인 닉네임입니다.';
+        setState(() => _isLoading = false);
+        return;
+      }
+
       await user.updateDisplayName(nickname);
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'nickname': nickname,
-        'birth': birth.isEmpty ? null : birth,
       }, SetOptions(merge: true));
 
-      if (password.isNotEmpty) {
-        await user.updatePassword(password);
+      if (confirmPassword.isNotEmpty) {
+        await user.updatePassword(confirmPassword);
       }
 
       await user.reload();
 
       if (!mounted) return;
-      _showSnackBar('회원정보가 수정되었습니다.');
-      Navigator.pop(context);
+      _showSuccessDialog('닉네임이 변경되었습니다.');
     } on FirebaseAuthException catch (e) {
-      _showSnackBar('수정 실패: ${e.message}');
+      if (e.code == 'wrong-password') {
+        _showErrorDialog('현재 비밀번호가 올바르지 않습니다.');
+      } else {
+        _showErrorDialog('수정 실패: ${e.message}');
+      }
     } catch (e) {
-      _showSnackBar('예상치 못한 오류: $e');
+      _showErrorDialog('예상치 못한 오류: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSnackBar(String message) {
+  void _showSuccessDialog(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('완료'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.black, // ✅ 확인 버튼 검정색
+            ),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('오류'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.black, // ✅ 확인 버튼 검정색
+            ),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -141,7 +178,6 @@ class _MemberEditPageState extends State<MemberEditPage> {
     nicknameController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
-    birthController.dispose();
     super.dispose();
   }
 
@@ -149,7 +185,7 @@ class _MemberEditPageState extends State<MemberEditPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('회원정보 수정'),
+        title: const Text('닉네임 수정'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -169,12 +205,13 @@ class _MemberEditPageState extends State<MemberEditPage> {
                 ),
               ),
               const SizedBox(height: 12),
+
               TextField(
                 controller: passwordController,
                 obscureText: _obscurePassword,
                 decoration: InputDecoration(
-                  label: _buildLabelWithStar('비밀번호'),
-                  hintText: '8자 이상 영문+숫자 포함',
+                  label: _buildLabelWithStar('현재 비밀번호'),
+                  hintText: '현재 비밀번호를 입력해주세요.',
                   errorText: passwordError,
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -188,11 +225,12 @@ class _MemberEditPageState extends State<MemberEditPage> {
                 ),
               ),
               const SizedBox(height: 12),
+
               TextField(
                 controller: confirmPasswordController,
                 obscureText: _obscureConfirmPassword,
                 decoration: InputDecoration(
-                  label: _buildLabelWithStar('비밀번호 확인'),
+                  label: const Text('비밀번호 확인'),
                   hintText: '비밀번호를 한번 더 입력해주세요.',
                   errorText: confirmPasswordError,
                   suffixIcon: IconButton(
@@ -207,16 +245,9 @@ class _MemberEditPageState extends State<MemberEditPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: birthController,
-                decoration: const InputDecoration(
-                  labelText: '생년월일 (선택)',
-                  hintText: 'YYYYMMDD (8자리 숫자)',
-                ),
-                keyboardType: TextInputType.number,
-              ),
+
               const SizedBox(height: 20),
+
               Center(
                 child: _isLoading
                     ? const CircularProgressIndicator()
@@ -224,28 +255,29 @@ class _MemberEditPageState extends State<MemberEditPage> {
                         onPressed: updateMemberInfo,
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size(200, 50),
+                          backgroundColor: AppColors.gray2,
+                          foregroundColor: AppColors.black,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(30),
                           ),
                         ),
                         child: const Text(
                           '수정 완료',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
               ),
               const SizedBox(height: 12),
+
               Center(
                 child: TextButton(
                   onPressed: () {
                     Navigator.pushNamed(context, '/resetPassword');
                   },
+                  style: TextButton.styleFrom(foregroundColor: AppColors.black),
                   child: const Text(
                     '비밀번호 재설정',
-                    style: TextStyle(
-                      fontSize: 16,
-                      decoration: TextDecoration.underline,
-                    ),
+                    style: TextStyle(decoration: TextDecoration.underline),
                   ),
                 ),
               ),
