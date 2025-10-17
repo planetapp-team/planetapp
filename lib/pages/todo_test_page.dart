@@ -210,7 +210,7 @@ class _TodoTestPageState extends State<TodoTestPage> {
                                   pastFilter = value!;
                                 });
                               },
-                              dropdownColor: Colors.white, // ✅ 배경 흰색 고정
+                              dropdownColor: Colors.white, //  배경 흰색 고정
                             ),
                           ],
                         ),
