@@ -5,6 +5,7 @@
 // ✅ 시작일/마감일 캘린더 & 시간 선택 버튼 검정색 + 선택된 날짜/시간 노란색 하이라이트 + 확인/취소 한글 표시
 // ✅ D-Day 표시 단순화 적용 + 별표 아이콘 추가 (오른쪽 끝, 토글 가능)
 // ✅ 지나간 일정 필터 드롭다운 추가 (1주일, 1개월, 2개월, 3개월, 전체) + 기본값 1주일
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -585,18 +586,53 @@ class _TodoTestPageState extends State<TodoTestPage> {
     );
   }
 
+  // ✅ 커스텀 날짜/시간 선택
   Future<DateTime?> _selectCustomDateTime(DateTime initial) async {
+    // 날짜 선택
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            dialogBackgroundColor: Colors.white,
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.yellow, // 선택된 날짜 노란색
+              onPrimary: Colors.black, // 선택된 날짜 텍스트 검정
+              onSurface: Colors.black, // 일반 텍스트 검정
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (pickedDate == null) return null;
 
+    // 시간 선택
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            dialogBackgroundColor: Colors.white,
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.yellow, // 선택된 시간 노란색
+              onPrimary: Colors.black, // 확인/취소 버튼 검정
+              onSurface: Colors.black, // 일반 텍스트 검정
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (pickedTime == null) return null;
 
