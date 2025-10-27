@@ -1,9 +1,9 @@
 // lib/todo_service.dart
-// ✅ Firestore에 할 일 저장 / 조회 / 수정 / 삭제 기능 포함
-// ✅ 자동 분류(category_classifier.dart) 기반 카테고리 분류
-// ✅ 오늘 일정만 가져오는 필터링 기능 (홈화면 전용)
-// ✅ 일정 등록 시 시작일/마감일 변환 및 자동 카테고리 분류
-// ✅ 일정 수정 시 날짜 및 제목 변경 감지
+// Firestore에 할 일 저장 / 조회 / 수정 / 삭제 기능 포함
+// 자동 분류(category_classifier.dart) 기반 카테고리 분류
+// 오늘 일정만 가져오는 필터링 기능 (홈화면 전용)
+// 일정 등록 시 시작일/마감일 변환 및 자동 카테고리 분류
+// 일정 수정 시 날짜 및 제목 변경 감지
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
