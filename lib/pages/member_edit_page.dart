@@ -88,28 +88,32 @@ class _MemberEditPageState extends State<MemberEditPage> {
     setState(() => _isLoading = true);
 
     try {
+      // 🔹 현재 비밀번호 재확인 (재인증)
       final cred = EmailAuthProvider.credential(
         email: user.email!,
         password: password,
       );
       await user.reauthenticateWithCredential(cred);
 
+      // 🔹 닉네임 중복 확인
       final existing = await FirebaseFirestore.instance
           .collection('users')
           .where('nickname', isEqualTo: nickname)
           .get();
 
       if (existing.docs.isNotEmpty && existing.docs.first.id != user.uid) {
-        nicknameError = '사용중인 닉네임입니다.';
+        nicknameError = '이미 사용 중인 닉네임입니다.';
         setState(() => _isLoading = false);
         return;
       }
 
+      // 🔹 닉네임 업데이트
       await user.updateDisplayName(nickname);
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'nickname': nickname,
       }, SetOptions(merge: true));
 
+      // 🔹 새 비밀번호로 변경 (선택 시)
       if (confirmPassword.isNotEmpty) {
         await user.updatePassword(confirmPassword);
       }
@@ -117,15 +121,17 @@ class _MemberEditPageState extends State<MemberEditPage> {
       await user.reload();
 
       if (!mounted) return;
-      _showSuccessDialog('닉네임이 변경되었습니다.');
+      _showSuccessDialog('닉네임이 성공적으로 변경되었습니다.');
     } on FirebaseAuthException catch (e) {
+      // 🔸 사용자에게는 깔끔한 문구만 표시
       if (e.code == 'wrong-password') {
-        _showErrorDialog('현재 비밀번호가 올바르지 않습니다.');
+        _showErrorDialog('현재 비밀번호가 틀렸습니다.');
       } else {
-        _showErrorDialog('수정 실패: ${e.message}');
+        _showErrorDialog('현재 비밀번호를 다시 확인해주세요.');
       }
-    } catch (e) {
-      _showErrorDialog('예상치 못한 오류: $e');
+    } catch (_) {
+      // 🔸 기타 예외도 사용자에게 단순한 문구로 안내
+      _showErrorDialog('닉네임 변경 중 오류가 발생했습니다.\n다시 시도해주세요.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -142,9 +148,7 @@ class _MemberEditPageState extends State<MemberEditPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.black, // ✅ 확인 버튼 검정색
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.black),
             child: const Text('확인'),
           ),
         ],
@@ -158,14 +162,12 @@ class _MemberEditPageState extends State<MemberEditPage> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('오류'),
+        title: const Text('실패'),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.black, // ✅ 확인 버튼 검정색
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.black),
             child: const Text('확인'),
           ),
         ],
