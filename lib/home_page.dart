@@ -1,9 +1,12 @@
 // lib/home_page.dart
 // 앱의 홈(메인) 화면
 
-// ✅ 수정 사항
+//  수정 사항
 // - 시작일~마감일 사이에 오늘이 포함된 일정도 "오늘 마감 일정"에 포함되도록 변경
 // - 알림 여부 on/off에 따라 반영 (기존 유지)
+// - 오늘 마감 일정 팝업에서 4개 이상일 때만 스크롤
+// - 팝업창 제목에서 (n건) 제거
+// - 오늘 마감 일정 카드 배경 빨강, 글씨 검정, 클릭 시 팝업
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -127,6 +130,11 @@ class _HomePageState extends State<HomePage> {
   void _showTodayTodoPopup(List<String> todayTodoTitles) {
     if (todayTodoTitles.isEmpty) return;
 
+    // 3개까진 전체 표시, 4개 이상이면 최대 3개 높이까지 보여주고 스크롤
+    double maxHeight = todayTodoTitles.length > 3
+        ? 3 * 60.0
+        : todayTodoTitles.length * 60.0;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -134,6 +142,7 @@ class _HomePageState extends State<HomePage> {
         title: const Text('오늘 마감 일정', style: TextStyle(color: Colors.black)),
         content: SizedBox(
           width: double.maxFinite,
+          height: maxHeight,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -191,7 +200,7 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.all(12.0),
           child: Column(
             children: [
-              // ✅ 오늘 일정 요약 배너
+              // ✅ 오늘 일정 요약 배너 (수정)
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('todos')
@@ -237,25 +246,37 @@ class _HomePageState extends State<HomePage> {
                     }
                   }
 
-                  return Material(
-                    color: AppColors.yellow,
-                    borderRadius: BorderRadius.circular(12),
+                  return Card(
+                    elevation: 3,
+                    color: Colors.red[300], // 중간 빨강
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
                       onTap: () => _showTodayTodoPopup(titles),
-                      child: Container(
-                        width: double.infinity,
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 12,
                           horizontal: 16,
                         ),
-                        child: Text(
-                          '오늘 마감 일정: $count건',
-                          style: const TextStyle(
-                            color: AppColors.black,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              '오늘 마감 일정 있어요!',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.notifications_active,
+                              color: Colors.white,
+                            ),
+                          ],
                         ),
                       ),
                     ),
