@@ -1,7 +1,7 @@
 // natural_input_page.dart
 // 문장으로 일정 저장 가능
 // 자동 분류
-// 자동 뷴류 결과
+// 자동 분류 결과
 // 시작일,마감일, 과목, 제목, 카테고리, 메모, 알림 받기(홈 화면 상단 배너 반영)
 
 import 'package:flutter/material.dart';
@@ -151,6 +151,28 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       _memoController.text = '';
       _notificationEnabled = true;
     });
+
+    // 🔹 마감일 없는 경우 안내 팝업 (저장은 사용자가 직접 눌러야 함)
+    if (_endDate == null) {
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('알림', style: TextStyle(color: Colors.black)),
+          content: const Text(
+            '마감일을 설정하지 않으면 오늘 일정으로 자동 분류됩니다.\n'
+            '일정 화면에서 수정 시 날짜 미정 일정으로 이동됩니다.',
+            style: TextStyle(color: Colors.black),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('확인', style: TextStyle(color: Colors.black)),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> saveTodo() async {
@@ -171,17 +193,14 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       return;
     }
 
+    // 🔹 마감일 없는 경우, 저장 시점에 자동 오늘일 설정
+    if (_endDate == null) {
+      final now = DateTime.now();
+      _endDate = DateTime(now.year, now.month, now.day, 23, 59, 0);
+    }
+
     try {
-      final deadlineDate =
-          _endDate ??
-          DateTime(
-            _startDate!.year,
-            _startDate!.month,
-            _startDate!.day,
-            23,
-            59,
-            0,
-          );
+      final deadlineDate = _endDate!;
 
       final todoData = {
         'title': _inputController.text,
@@ -271,7 +290,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     await flutterLocalNotificationsPlugin.cancel(notificationId);
   }
 
-  /// ✅ 날짜/시간 선택 커스텀 다이얼로그 (확인/취소 한글 표시)
+  /// 날짜/시간 선택 커스텀 다이얼로그 (확인/취소 한글 표시)
   Future<void> _selectStartDate() async {
     final now = DateTime.now();
     final pickedDate = await showDatePicker(
@@ -592,6 +611,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
                             _notificationEnabled = value;
                           });
                         },
+                        activeColor: AppColors.yellow,
                         contentPadding: EdgeInsets.zero,
                       ),
                       const SizedBox(height: 20),
