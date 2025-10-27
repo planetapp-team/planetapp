@@ -324,6 +324,7 @@ class _FilterPageState extends State<FilterPage> {
                           onPrimary: AppColors.black,
                           surface: AppColors.white,
                           onSurface: AppColors.black,
+                          secondary: AppColors.gray1, // ✅ 변경: 기간 구간 색상
                         ),
                         textButtonTheme: TextButtonThemeData(
                           style: TextButton.styleFrom(
