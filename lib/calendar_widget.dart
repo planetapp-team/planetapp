@@ -1,4 +1,7 @@
 // lib/calendar_widget.dart
+// 홈 화면 일정 카드 디자인 + 완료/즐겨찾기 실시간 반영 + 과목별 점 표시 + 3개 초과 +n 표시
+// ✅ 오늘 날짜 진한 노란색 / 선택 날짜(오늘 제외) 연한 노란색, 글씨 검정
+
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,13 +10,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 class CalendarWidget extends StatefulWidget {
   final void Function(DateTime)? onDateSelected;
   final DateTime? initialSelectedDate;
-  final bool isHome; // 홈 화면 여부 추가
+  final bool isHome; // 홈 화면 여부
 
   const CalendarWidget({
     Key? key,
     this.onDateSelected,
     this.initialSelectedDate,
-    this.isHome = false, // 기본값 false
+    this.isHome = false,
   }) : super(key: key);
 
   @override
@@ -26,31 +29,37 @@ class _CalendarWidgetState extends State<CalendarWidget> {
   DateTime? _selectedDay;
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
   List<Map<String, dynamic>> _selectedEvents = [];
+  late String userId;
 
   static const Color gray2 = Color(0xFFD9D9D9);
   static const Color black = Color(0xFF000000);
+  static const Color yellow = Color(0xFFFFD741); // 오늘 날짜 진한 노란색
+  static const Color lightYellow = Color(0xFFFFF59D); // 선택 날짜 연한 노란색
 
   @override
   void initState() {
     super.initState();
     _focusedDay = widget.initialSelectedDate ?? DateTime.now();
     _selectedDay = _focusedDay;
+    userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    _fetchTodos();
 
-    _fetchTodos().then((_) {
-      setState(() {
-        _selectedEvents = _getEventsForDay(_selectedDay!);
-      });
-    });
+    // 실시간 업데이트
+    FirebaseFirestore.instance
+        .collection('todos')
+        .doc(userId)
+        .collection('userTodos')
+        .snapshots()
+        .listen((snapshot) => _fetchTodos());
   }
 
   Future<void> _fetchTodos() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (userId.isEmpty) return;
 
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('todos')
-          .doc(uid)
+          .doc(userId)
           .collection('userTodos')
           .get();
 
@@ -60,20 +69,18 @@ class _CalendarWidgetState extends State<CalendarWidget> {
         final data = doc.data();
         if (data['startDate'] == null || data['endDate'] == null) continue;
 
-        final dynamic startTsDynamic = data['startDate'];
-        final dynamic endTsDynamic = data['endDate'];
-        if (startTsDynamic is! Timestamp || endTsDynamic is! Timestamp)
-          continue;
+        final startTs = data['startDate'] as Timestamp;
+        final endTs = data['endDate'] as Timestamp;
 
-        final DateTime startDate = DateTime(
-          startTsDynamic.toDate().year,
-          startTsDynamic.toDate().month,
-          startTsDynamic.toDate().day,
+        final startDate = DateTime(
+          startTs.toDate().year,
+          startTs.toDate().month,
+          startTs.toDate().day,
         );
-        final DateTime endDate = DateTime(
-          endTsDynamic.toDate().year,
-          endTsDynamic.toDate().month,
-          endTsDynamic.toDate().day,
+        final endDate = DateTime(
+          endTs.toDate().year,
+          endTs.toDate().month,
+          endTs.toDate().day,
         );
 
         for (
@@ -100,48 +107,11 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     return _events[DateTime(day.year, day.month, day.day)] ?? [];
   }
 
-  Future<void> _deleteTodo(String docId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('todos')
-          .doc(uid)
-          .collection('userTodos')
-          .doc(docId)
-          .delete();
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('일정이 삭제되었습니다.')));
-      await _fetchTodos();
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
-    }
-  }
-
-  void _navigateToEditPage(Map<String, dynamic> event) async {
-    final result = await Navigator.pushNamed(
-      context,
-      '/edit_todo',
-      arguments: event,
-    );
-    if (result == true) await _fetchTodos();
-  }
-
   Color getSubjectColor(String subject) {
     final hash = subject.hashCode;
     final hue = (hash % 360).toDouble();
     final Color color = HSLColor.fromAHSL(1.0, hue, 0.6, 0.6).toColor();
-    final Color tonedColor = Color.lerp(
-      color,
-      const Color.fromARGB(255, 255, 255, 255),
-      0.1,
-    )!;
-    return tonedColor.withOpacity(0.85);
+    return color.withOpacity(0.85);
   }
 
   void _showEditRestrictionMessage() {
@@ -150,6 +120,53 @@ class _CalendarWidgetState extends State<CalendarWidget> {
         content: Text('일정 수정/삭제는 일정 화면 일정 카드 클릭 시 가능합니다.'),
         duration: Duration(seconds: 2),
       ),
+    );
+  }
+
+  Future<void> _toggleCompleted(String docId, bool current) async {
+    await FirebaseFirestore.instance
+        .collection('todos')
+        .doc(userId)
+        .collection('userTodos')
+        .doc(docId)
+        .update({'completed': !current});
+  }
+
+  Future<void> _toggleFavorite(String docId, bool current) async {
+    await FirebaseFirestore.instance
+        .collection('todos')
+        .doc(userId)
+        .collection('userTodos')
+        .doc(docId)
+        .update({'favorite': !current});
+  }
+
+  Widget _buildDdayTag(Map<String, dynamic> event) {
+    if (event['endDate'] == null) return const SizedBox.shrink();
+    final ts = event['endDate'];
+    if (ts is! Timestamp) return const SizedBox.shrink();
+
+    final endDate = ts.toDate();
+    final now = DateTime.now();
+    final diff = DateTime(
+      endDate.year,
+      endDate.month,
+      endDate.day,
+    ).difference(DateTime(now.year, now.month, now.day)).inDays;
+
+    if (diff < 0)
+      return const Text(
+        '종료',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      );
+    if (diff == 0)
+      return const Text(
+        'D-Day',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      );
+    return Text(
+      'D-$diff',
+      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
     );
   }
 
@@ -176,16 +193,30 @@ class _CalendarWidgetState extends State<CalendarWidget> {
             onFormatChanged: (format) =>
                 setState(() => _calendarFormat = format),
             onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+
             calendarStyle: CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: Colors.deepPurple.shade100,
+              todayDecoration: const BoxDecoration(
+                color: yellow,
                 shape: BoxShape.circle,
               ),
-              selectedDecoration: const BoxDecoration(
-                color: Colors.deepPurple,
+              selectedDecoration: BoxDecoration(
+                color:
+                    _selectedDay != null &&
+                        isSameDay(_selectedDay, DateTime.now())
+                    ? yellow
+                    : lightYellow,
                 shape: BoxShape.circle,
+              ),
+              todayTextStyle: const TextStyle(
+                color: black,
+                fontWeight: FontWeight.bold,
+              ),
+              selectedTextStyle: const TextStyle(
+                color: black,
+                fontWeight: FontWeight.bold,
               ),
             ),
+
             calendarBuilders: CalendarBuilders(
               markerBuilder: (context, date, events) {
                 if (events.isEmpty) return const SizedBox.shrink();
@@ -255,10 +286,12 @@ class _CalendarWidgetState extends State<CalendarWidget> {
               ),
             )
           else
-            ..._selectedEvents.map((eventObj) {
-              final event = eventObj as Map<String, dynamic>;
+            ..._selectedEvents.map((event) {
               final subject = (event['subject'] ?? '기타').toString();
               final subjectColor = getSubjectColor(subject);
+              final completed = event['completed'] ?? false;
+              final favorite = event['favorite'] ?? false;
+              final docId = event['docId'];
 
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
@@ -267,34 +300,49 @@ class _CalendarWidgetState extends State<CalendarWidget> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: GestureDetector(
-                  onTap: () {
-                    if (widget.isHome) {
-                      _showEditRestrictionMessage();
-                    } else {
-                      _navigateToEditPage(event);
-                    }
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${event['subject'] ?? ''}/${event['category'] ?? ''}/${event['title'] ?? ''}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () async {
+                          await _toggleCompleted(docId, completed);
+                        },
+                        child: Icon(
+                          completed
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          event['title'] ?? '',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
                           ),
                         ),
-                        _buildDdayTag(event),
-                      ],
-                    ),
+                      ),
+                      _buildDdayTag(event),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          await _toggleFavorite(docId, favorite);
+                        },
+                        child: Icon(
+                          favorite ? Icons.star : Icons.star_border,
+                          color: Colors.yellow,
+                          size: 24,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -303,39 +351,5 @@ class _CalendarWidgetState extends State<CalendarWidget> {
         ],
       ),
     );
-  }
-
-  /// ✅ D-day 계산: 마감일(endDate) 기준
-  Widget _buildDdayTag(Map<String, dynamic> event) {
-    if (event['endDate'] == null) return const SizedBox.shrink();
-
-    final dynamic tsDynamic = event['endDate'];
-    if (tsDynamic is! Timestamp) return const SizedBox.shrink();
-
-    final DateTime endDate = tsDynamic.toDate();
-    final DateTime now = DateTime.now();
-    final DateTime endOnly = DateTime(endDate.year, endDate.month, endDate.day);
-    final DateTime nowOnly = DateTime(now.year, now.month, now.day);
-    final int difference = endOnly.difference(nowOnly).inDays;
-
-    if (difference < 0) {
-      return const Text(
-        '종료',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-      );
-    } else if (difference == 0) {
-      return const Text(
-        'D-Day',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-      );
-    } else {
-      return Text(
-        'D-$difference',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      );
-    }
   }
 }
