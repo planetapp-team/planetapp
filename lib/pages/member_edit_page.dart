@@ -1,4 +1,7 @@
 // lib/member_edit_page.dart
+// 설정 화면
+// 닉네임 수정 화면
+//닉네임 변경 시 현재 비밀번호와 비번 재확인 인증 후 변경 가능
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
