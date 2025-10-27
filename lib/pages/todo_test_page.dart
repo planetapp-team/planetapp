@@ -1,11 +1,4 @@
 // lib/todo_test_page.dart
-// 일정 화면(=일정 관리 화면)
-// 기존 기능, 구조 유지
-// ✅ 일정 수정 팝업창에 메모 입력/수정 기능 추가
-// ✅ 시작일/마감일 캘린더 & 시간 선택 버튼 검정색 + 선택된 날짜/시간 노란색 하이라이트 + 확인/취소 한글 표시
-// ✅ D-Day 표시 단순화 적용 + 별표 아이콘 추가 (오른쪽 끝, 토글 가능)
-// ✅ 지나간 일정 필터 드롭다운 추가 (1주일, 1개월, 2개월, 3개월, 전체) + 기본값 1주일
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:planetapp/services/todo_service.dart';
 import '../services/fcm_service.dart';
 import '../main.dart'; // flutterLocalNotificationsPlugin 가져오기
-import '../utils/theme.dart'; // AppColors.yellow 사용
+import '../utils/theme.dart'; // AppColors 사용
 
 class TodoTestPage extends StatefulWidget {
   const TodoTestPage({super.key});
@@ -39,10 +32,34 @@ class _TodoTestPageState extends State<TodoTestPage> {
     );
   }
 
+  // ✅ 이번 주 날짜 범위 계산
+  String getCurrentWeekRange() {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1)); // 월요일
+    final endOfWeek = startOfWeek.add(const Duration(days: 6)); // 일요일
+
+    String formatDate(DateTime date) =>
+        "${date.month.toString().padLeft(2, '0')}월 ${date.day.toString().padLeft(2, '0')}일";
+
+    return "${formatDate(startOfWeek)} ~ ${formatDate(endOfWeek)}";
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('일정 관리')),
+      // ✅ AppBar 수정: 오른쪽에 이번 주 날짜 범위 표시
+      appBar: AppBar(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('일정 관리'),
+            Text(
+              getCurrentWeekRange(),
+              style: const TextStyle(fontSize: 14, color: AppColors.gray1),
+            ),
+          ],
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -211,7 +228,7 @@ class _TodoTestPageState extends State<TodoTestPage> {
                                   pastFilter = value!;
                                 });
                               },
-                              dropdownColor: Colors.white, //  배경 흰색 고정
+                              dropdownColor: Colors.white,
                             ),
                           ],
                         ),
@@ -247,7 +264,6 @@ class _TodoTestPageState extends State<TodoTestPage> {
     return HSLColor.fromAHSL(1.0, hue, 0.6, 0.75).toColor();
   }
 
-  /// ✅ D-Day 계산 및 표시 (간단하게 텍스트 + 별표)
   Widget _buildDdayTag(Map<String, dynamic> todo) {
     final Timestamp? endTs = todo['endDate'];
     if (endTs == null) return const SizedBox.shrink();
@@ -283,7 +299,7 @@ class _TodoTestPageState extends State<TodoTestPage> {
     final title = todo['title'] ?? '';
     final subject = todo['subject'] ?? '';
     final bool completed = todo['completed'] ?? false;
-    final bool favorite = todo['favorite'] ?? false; // 별표 상태
+    final bool favorite = todo['favorite'] ?? false;
     final Color cardColor = getSubjectColor(subject);
 
     return Card(
@@ -352,12 +368,6 @@ class _TodoTestPageState extends State<TodoTestPage> {
     );
   }
 
-  String _formatDate(dynamic date) {
-    if (date == null) return '선택';
-    return DateFormat('yyyy-MM-dd HH:mm').format(date.toDate());
-  }
-
-  // ===== 이하 일정 수정 팝업, 삭제 등 기존 코드 그대로 유지 =====
   Future<void> _showEditDialog(
     BuildContext context,
     String docId,
@@ -482,6 +492,8 @@ class _TodoTestPageState extends State<TodoTestPage> {
                     ),
                   ],
                 ),
+
+                // ✅ 알림 토글 (노란색으로 고정)
                 SwitchListTile(
                   title: const Text(
                     '알림',
@@ -490,6 +502,9 @@ class _TodoTestPageState extends State<TodoTestPage> {
                   value: notificationEnabled,
                   onChanged: (val) => setState(() => notificationEnabled = val),
                   contentPadding: EdgeInsets.zero,
+                  activeColor: AppColors.yellow, // ✅ 노란색으로 변경
+                  inactiveThumbColor: AppColors.gray2,
+                  inactiveTrackColor: AppColors.gray1,
                 ),
               ],
             ),
@@ -586,9 +601,7 @@ class _TodoTestPageState extends State<TodoTestPage> {
     );
   }
 
-  // ✅ 커스텀 날짜/시간 선택
   Future<DateTime?> _selectCustomDateTime(DateTime initial) async {
-    // 날짜 선택
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -599,9 +612,9 @@ class _TodoTestPageState extends State<TodoTestPage> {
           data: ThemeData.light().copyWith(
             dialogBackgroundColor: Colors.white,
             colorScheme: const ColorScheme.light(
-              primary: AppColors.yellow, // 선택된 날짜 노란색
-              onPrimary: Colors.black, // 선택된 날짜 텍스트 검정
-              onSurface: Colors.black, // 일반 텍스트 검정
+              primary: AppColors.yellow,
+              onPrimary: Colors.black,
+              onSurface: Colors.black,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(foregroundColor: Colors.black),
@@ -613,7 +626,6 @@ class _TodoTestPageState extends State<TodoTestPage> {
     );
     if (pickedDate == null) return null;
 
-    // 시간 선택
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
@@ -622,9 +634,11 @@ class _TodoTestPageState extends State<TodoTestPage> {
           data: ThemeData.light().copyWith(
             dialogBackgroundColor: Colors.white,
             colorScheme: const ColorScheme.light(
-              primary: AppColors.yellow, // 선택된 시간 노란색
-              onPrimary: Colors.black, // 확인/취소 버튼 검정
-              onSurface: Colors.black, // 일반 텍스트 검정
+              primary: AppColors.yellow,
+              onPrimary: Colors.black,
+              onSurface: Colors.black,
+              secondary: AppColors.gray2,
+              onSecondary: Colors.black,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(foregroundColor: Colors.black),
