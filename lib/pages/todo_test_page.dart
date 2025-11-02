@@ -1,4 +1,8 @@
 // lib/todo_test_page.dart
+// 일정 관리 화면
+// 일정 추가 시 저장된 일정 전체 확인 가능한 화면
+// 오늘, 예정된 일정, 날짜 미정 일정, 지나간 일정
+// 일정 관리 맨 오른쪽 오늘 날짜 기준으로 일주일 범위 구간 자동 계산 표시 : 검정색
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -55,7 +59,7 @@ class _TodoTestPageState extends State<TodoTestPage> {
             const Text('일정 관리'),
             Text(
               getCurrentWeekRange(),
-              style: const TextStyle(fontSize: 14, color: AppColors.gray1),
+              style: const TextStyle(fontSize: 14, color: AppColors.black),
             ),
           ],
         ),
@@ -158,8 +162,10 @@ class _TodoTestPageState extends State<TodoTestPage> {
                     }
                   }).toList();
 
+                  // ✅ 순서 변경: 오늘 → 예정된 일정 → 날짜 미정 일정 → 지나간 일정
                   return ListView(
                     children: [
+                      // 오늘 일정
                       if (todayList.isNotEmpty) ...[
                         Align(
                           alignment: Alignment.centerLeft,
@@ -185,6 +191,8 @@ class _TodoTestPageState extends State<TodoTestPage> {
                         const SizedBox(height: 12),
                         ...todayList.map((doc) => _buildTodoItem(doc)),
                       ],
+
+                      // 예정된 일정
                       if (upcomingList.isNotEmpty) const SizedBox(height: 12),
                       if (upcomingList.isNotEmpty)
                         const Padding(
@@ -198,6 +206,24 @@ class _TodoTestPageState extends State<TodoTestPage> {
                           ),
                         ),
                       ...upcomingList.map((doc) => _buildTodoItem(doc)),
+
+                      // 날짜 미정 일정
+                      if (undeterminedList.isNotEmpty)
+                        const SizedBox(height: 12),
+                      if (undeterminedList.isNotEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            '날짜 미정 일정',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ...undeterminedList.map((doc) => _buildTodoItem(doc)),
+
+                      // 지나간 일정
                       if (pastList.isNotEmpty) const SizedBox(height: 12),
                       if (pastList.isNotEmpty)
                         Row(
@@ -233,20 +259,6 @@ class _TodoTestPageState extends State<TodoTestPage> {
                           ],
                         ),
                       ...filteredPastList.map((doc) => _buildTodoItem(doc)),
-                      if (undeterminedList.isNotEmpty)
-                        const SizedBox(height: 12),
-                      if (undeterminedList.isNotEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8.0),
-                          child: Text(
-                            '날짜 미정 일정',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ...undeterminedList.map((doc) => _buildTodoItem(doc)),
                     ],
                   );
                 },
