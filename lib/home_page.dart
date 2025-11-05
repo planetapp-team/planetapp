@@ -7,7 +7,8 @@
 // - 오늘 마감 일정 팝업에서 4개 이상일 때만 스크롤
 // - 팝업창 제목에서 (n건) 제거
 // - 오늘 마감 일정 카드 배경 빨강, 글씨 검정, 클릭 시 팝업
-
+// - 전체 알림 OFF 시 배너 자체 숨김
+// 홈 화면에서 모든 일정 확인 가능 + 마감 일정 알림 배너 확인 가능
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -200,86 +201,112 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.all(12.0),
           child: Column(
             children: [
-              // ✅ 오늘 일정 요약 배너 (수정)
-              StreamBuilder<QuerySnapshot>(
+              // ✅ 오늘 일정 요약 배너 (알림 ON일 때만 표시)
+              StreamBuilder<DocumentSnapshot>(
                 stream: FirebaseFirestore.instance
-                    .collection('todos')
+                    .collection('users')
                     .doc(user.uid)
-                    .collection('userTodos')
                     .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return Container();
+                builder: (context, userSnapshot) {
+                  if (!userSnapshot.hasData) return Container();
 
-                  final now = DateTime.now();
-                  final today = DateTime(now.year, now.month, now.day);
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  final isNotificationOn = userData?['notificationOn'] ?? true;
 
-                  int count = 0;
-                  List<String> titles = [];
-
-                  for (var doc in snapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final startTimestamp = data['startDate'] as Timestamp?;
-                    final endTimestamp = data['endDate'] as Timestamp?;
-                    final notifyOn = data['notification'] as bool? ?? true;
-
-                    if (!notifyOn ||
-                        startTimestamp == null ||
-                        endTimestamp == null)
-                      continue;
-
-                    final startDate = startTimestamp.toDate();
-                    final endDate = endTimestamp.toDate();
-
-                    // ✅ 오늘이 startDate~endDate 사이에 포함되는 경우
-                    if (!today.isBefore(
-                          DateTime(
-                            startDate.year,
-                            startDate.month,
-                            startDate.day,
-                          ),
-                        ) &&
-                        !today.isAfter(
-                          DateTime(endDate.year, endDate.month, endDate.day),
-                        )) {
-                      count++;
-                      titles.add(data['title'] ?? '제목 없음');
-                    }
+                  if (!isNotificationOn) {
+                    // 🔕 전체 알림 OFF 시 배너 표시 안 함
+                    return const SizedBox.shrink();
                   }
 
-                  return Card(
-                    elevation: 3,
-                    color: Colors.red[300], // 중간 빨강
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _showTodayTodoPopup(titles),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 16,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              '오늘 마감 일정 있어요!',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                fontSize: 16,
+                  // 🔔 알림 ON 상태일 때만 일정 확인
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('todos')
+                        .doc(user.uid)
+                        .collection('userTodos')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) return Container();
+
+                      final now = DateTime.now();
+                      final today = DateTime(now.year, now.month, now.day);
+
+                      int count = 0;
+                      List<String> titles = [];
+
+                      for (var doc in snapshot.data!.docs) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final startTimestamp = data['startDate'] as Timestamp?;
+                        final endTimestamp = data['endDate'] as Timestamp?;
+                        final notifyOn = data['notification'] as bool? ?? true;
+
+                        if (!notifyOn ||
+                            startTimestamp == null ||
+                            endTimestamp == null)
+                          continue;
+
+                        final startDate = startTimestamp.toDate();
+                        final endDate = endTimestamp.toDate();
+
+                        // ✅ 오늘이 startDate~endDate 사이에 포함되는 경우
+                        if (!today.isBefore(
+                              DateTime(
+                                startDate.year,
+                                startDate.month,
+                                startDate.day,
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.notifications_active,
-                              color: Colors.white,
-                            ),
-                          ],
+                            ) &&
+                            !today.isAfter(
+                              DateTime(
+                                endDate.year,
+                                endDate.month,
+                                endDate.day,
+                              ),
+                            )) {
+                          count++;
+                          titles.add(data['title'] ?? '제목 없음');
+                        }
+                      }
+
+                      if (count == 0) return const SizedBox.shrink();
+
+                      return Card(
+                        elevation: 3,
+                        color: Colors.red[300], // 중간 빨강
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                    ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => _showTodayTodoPopup(titles),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 16,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Text(
+                                  '오늘 마감 일정 있어요!',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Icon(
+                                  Icons.notifications_active,
+                                  color: Colors.white,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
