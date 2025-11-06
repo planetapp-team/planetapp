@@ -297,7 +297,6 @@ class _FilterPageState extends State<FilterPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- 기존 필터 UI 그대로 유지 ---
             const Text('날짜', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             InkWell(
@@ -324,7 +323,7 @@ class _FilterPageState extends State<FilterPage> {
                           onPrimary: AppColors.black,
                           surface: AppColors.white,
                           onSurface: AppColors.black,
-                          secondary: AppColors.gray1, // ✅ 변경: 기간 구간 색상
+                          secondary: AppColors.gray1,
                         ),
                         textButtonTheme: TextButtonThemeData(
                           style: TextButton.styleFrom(
@@ -398,58 +397,62 @@ class _FilterPageState extends State<FilterPage> {
             ),
             const SizedBox(height: 20),
             const Text('카테고리', style: TextStyle(fontWeight: FontWeight.bold)),
-            Wrap(
-              spacing: 60,
-              runSpacing: 50,
-              children: [
-                ...defaultCategories.map(
-                  (cat) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(cat),
-                        Checkbox(
-                          value: selectedCategories.contains(cat),
-                          onChanged: (checked) {
-                            setState(() {
-                              if (checked == true) {
-                                selectedCategories.add(cat);
-                              } else {
-                                selectedCategories.remove(cat);
-                              }
-                            });
-                          },
-                        ),
-                      ],
+
+            // ✅ 줄바꿈 방지 + 가로 스크롤 적용 (디자인 유지)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...defaultCategories.map(
+                    (cat) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(cat),
+                          Checkbox(
+                            value: selectedCategories.contains(cat),
+                            onChanged: (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  selectedCategories.add(cat);
+                                } else {
+                                  selectedCategories.remove(cat);
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                ...userCategories.map(
-                  (cat) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(cat),
-                        Checkbox(
-                          value: selectedCategories.contains(cat),
-                          onChanged: (checked) {
-                            setState(() {
-                              if (checked == true) {
-                                selectedCategories.add(cat);
-                              } else {
-                                selectedCategories.remove(cat);
-                              }
-                            });
-                          },
-                        ),
-                      ],
+                  ...userCategories.map(
+                    (cat) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(cat),
+                          Checkbox(
+                            value: selectedCategories.contains(cat),
+                            onChanged: (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  selectedCategories.add(cat);
+                                } else {
+                                  selectedCategories.remove(cat);
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+
             const SizedBox(height: 30),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
