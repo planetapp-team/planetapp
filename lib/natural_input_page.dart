@@ -152,7 +152,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       _notificationEnabled = true;
     });
 
-    // 🔹 마감일 없는 경우 안내 팝업 (저장은 사용자가 직접 눌러야 함)
     if (_endDate == null) {
       await showDialog(
         context: context,
@@ -193,7 +192,6 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
       return;
     }
 
-    // 🔹 마감일 없는 경우, 저장 시점에 자동 오늘일 설정
     if (_endDate == null) {
       final now = DateTime.now();
       _endDate = DateTime(now.year, now.month, now.day, 23, 59, 0);
@@ -290,7 +288,7 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
     await flutterLocalNotificationsPlugin.cancel(notificationId);
   }
 
-  /// 날짜/시간 선택 커스텀 다이얼로그 (확인/취소 한글 표시)
+  /// 날짜/시간 선택 커스텀 다이얼로그
   Future<void> _selectStartDate() async {
     final now = DateTime.now();
     final pickedDate = await showDatePicker(
@@ -305,10 +303,12 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             dialogBackgroundColor: Colors.white,
-            colorScheme: ColorScheme.light(
+            colorScheme: const ColorScheme.light(
               primary: AppColors.yellow,
               onPrimary: AppColors.black,
               onSurface: AppColors.black,
+              secondary: AppColors.gray1, // 추가: AM/PM 비활성 색상 gray1
+              onSecondary: AppColors.black,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(foregroundColor: Colors.black),
@@ -331,10 +331,12 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
           return Theme(
             data: Theme.of(context).copyWith(
               dialogBackgroundColor: Colors.white,
-              colorScheme: ColorScheme.light(
+              colorScheme: const ColorScheme.light(
                 primary: AppColors.yellow,
                 onPrimary: AppColors.black,
                 onSurface: AppColors.black,
+                secondary: AppColors.gray1, // 여기 적용됨
+                onSecondary: AppColors.black,
               ),
               textButtonTheme: TextButtonThemeData(
                 style: TextButton.styleFrom(foregroundColor: Colors.black),
@@ -378,10 +380,12 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             dialogBackgroundColor: Colors.white,
-            colorScheme: ColorScheme.light(
+            colorScheme: const ColorScheme.light(
               primary: AppColors.yellow,
               onPrimary: AppColors.black,
               onSurface: AppColors.black,
+              secondary: AppColors.gray1, // ✅ 동일하게 적용
+              onSecondary: AppColors.black,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(foregroundColor: Colors.black),
@@ -404,10 +408,12 @@ class _NaturalInputPageState extends State<NaturalInputPage> {
           return Theme(
             data: Theme.of(context).copyWith(
               dialogBackgroundColor: Colors.white,
-              colorScheme: ColorScheme.light(
+              colorScheme: const ColorScheme.light(
                 primary: AppColors.yellow,
                 onPrimary: AppColors.black,
                 onSurface: AppColors.black,
+                secondary: AppColors.gray1, // ✅ AM/PM 색상 통일
+                onSecondary: AppColors.black,
               ),
               textButtonTheme: TextButtonThemeData(
                 style: TextButton.styleFrom(foregroundColor: Colors.black),
